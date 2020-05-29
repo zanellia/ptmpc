@@ -2,6 +2,8 @@ import numpy as np
 import casadi as ca
 from .integrator import Integrator
 
+np_t = np.transpose
+
 class OcpDims:
     def __init__(self, nx, nu, ng, ngN, N, M):
         """
@@ -57,6 +59,8 @@ class Ocp:
         tau  : float 
             tightening factor
         """
+
+        self.tau = tau
 
         # define CasADi functions
         lc = ca.Function('lc', [x,u], [lc_])
@@ -211,39 +215,51 @@ class Ocp:
         # define CasADi functions for linearization
 
         # dynamics
-        nabla_x_f = ca.Function('nabla_x_f', [integrator.x, integrator.u], \
+        jac_x_f = ca.Function('jac_x_f', [integrator.x, integrator.u], \
             [ca.jacobian(integrator.xplus_expr, x)])
-        self.nabla_x_f = nabla_x_f
+        self.jac_x_f = jac_x_f
 
-        nabla_u_f = ca.Function('nabla_u_f', [integrator.x, integrator.u], \
+        jac_u_f = ca.Function('jac_u_f', [integrator.x, integrator.u], \
             [ca.jacobian(integrator.xplus_expr, u)])
-        self.nabla_u_f = nabla_u_f
+        self.jac_u_f = jac_u_f
 
         # cost
-        nabla_xx_l = ca.Function('nabla_xx_l', [x, u], \
+        jac_x_l = ca.Function('jac_x_l', [x, u], \
+            [ca.jacobian(lc_, x)[0]])
+        self.jac_x_l = jac_x_l
+
+        jac_u_l = ca.Function('jac_u_l', [x, u], \
+            [ca.jacobian(lc_, u)[0]])
+        self.jac_u_l = jac_u_l
+
+        jac_xx_l = ca.Function('jac_xx_l', [x, u], \
             [ca.hessian(lc_, x)[0]])
-        self.nabla_xx_l = nabla_xx_l
+        self.jac_xx_l = jac_xx_l
 
-        nabla_uu_l = ca.Function('nabla_uu_l', [x, u], \
+        jac_uu_l = ca.Function('jac_uu_l', [x, u], \
             [ca.hessian(lc_, u)[0]])
-        self.nabla_uu_l = nabla_uu_l
+        self.jac_uu_l = jac_uu_l
 
-        nabla_xx_lN = ca.Function('nabla_xx_lN', [x], \
+        jac_xx_lN = ca.Function('jac_xx_lN', [x], \
             [ca.hessian(lcN_, x)[0]])
-        self.nabla_xx_lN = nabla_xx_lN
+        self.jac_xx_lN = jac_xx_lN
+
+        jac_x_lN = ca.Function('jac_x_lN', [x], \
+            [ca.jacobian(lc_, x)[0]])
+        self.jac_x_l = jac_x_l
 
         # constraints
-        nabla_x_g = ca.Function('nabla_x_g', [x, u], \
+        jac_x_g = ca.Function('jac_x_g', [x, u], \
             [ca.jacobian(g_, x)])
-        self.nabla_x_g = nabla_x_g
+        self.jac_x_g = jac_x_g
 
-        nabla_u_g = ca.Function('nabla_u_g', [x, u], \
+        jac_u_g = ca.Function('jac_u_g', [x, u], \
             [ca.jacobian(g_, u)])
-        self.nabla_u_g = nabla_u_g
+        self.jac_u_g = jac_u_g
 
-        nabla_x_gN = ca.Function('nabla_x_gN', [x], \
+        jac_x_gN = ca.Function('jac_x_gN', [x], \
             [ca.jacobian(gN_, x)])
-        self.nabla_x_gN = nabla_x_gN
+        self.jac_x_gN = jac_x_gN
 
         # these are the primal-dual iterates of the partially tightened RTI
         self.x = []
@@ -300,22 +316,27 @@ class Ocp:
         # - vectors (residuals)
         self.r_lam = []
         self.r_x = []
+        self.r_x_t = []
         self.r_u = []
+        self.r_u_t = []
         self.r_nu = []
-        self.r_e = []
+        self.e = []
 
         for i in range(N):
             self.r_lam.append(np.zeros((NX,1)))
             self.r_x.append(np.zeros((NX,1)))
+            self.r_x_t.append(np.zeros((NX,1)))
             self.r_u.append(np.zeros((NU,1)))
+            self.r_u_t.append(np.zeros((NU,1)))
             self.r_nu.append(np.zeros((NG,1)))
-            self.r_e.append(np.zeros((NG,1)))
+            self.e.append(np.zeros((NG,1)))
 
         self.r_lam.append(np.zeros((NX,1)))
         self.r_x.append(np.zeros((NX,1)))
+        self.r_x_t.append(np.zeros((NX,1)))
         self.r_u.append(np.zeros((NU,1)))
         self.r_nu.append(np.zeros((NG,1)))
-        self.r_e.append(np.zeros((NG,1)))
+        self.e.append(np.zeros((NG,1)))
 
         # these are the variables associated with the Riccati recursion 
         self.P = []
@@ -324,6 +345,8 @@ class Ocp:
         for i in range(N+1):
             self.p.append(np.zeros((NX,1)))
             self.P.append(np.zeros((NX,1)))
+
+        self.x0 = np.zeros((NX,1))
 
     def update_x0(self, x0):
         """
@@ -337,6 +360,7 @@ class Ocp:
         for i in range(self.dims.nx):
             self._lbw[i] = x0[i]
             self._ubw[i] = x0[i]
+        self.x0 = x0
 
     def eval(self):
         """
@@ -352,34 +376,121 @@ class Ocp:
         for i in range(N):
             x = self.x[i]
             u = self.u[i]
-            self.A[i] = self.nabla_x_f(x,u).full()
-            self.B[i] = self.nabla_u_f(x,u).full()
-            # TODO(andrea): add Hessian contributions from dynamics and constraints?
-            self.Hxx[i] = self.nabla_xx_l(x,u).full()
-            self.Huu[i] = self.nabla_uu_l(x,u).full()
-            self.C[i] = self.nabla_x_g(x,u).full()
-            self.D[i] = self.nabla_u_g(x,u).full()
 
-        x = self.x[N]
-        self.Hxx[N] = self.nabla_xx_lN(x).full()
-        self.C[N] = self.nabla_x_gN(x).full()
+            # matrices
+            self.A[i] = self.jac_x_f(x,u).full()
+            self.B[i] = self.jac_u_f(x,u).full()
+            # TODO(andrea): add Hessian contributions from dynamics and constraints?
+            self.Hxx[i] = self.jac_xx_l(x,u).full()
+            self.Huu[i] = self.jac_uu_l(x,u).full()
+            self.C[i] = self.jac_x_g(x,u).full()
+            self.D[i] = self.jac_u_g(x,u).full()
+
+            x = self.x[N]
+            self.Hxx[N] = self.jac_xx_lN(x).full()
+            self.C[N] = self.jac_x_gN(x).full()
+
+            # vectors
+            i = 0
+
+            x   = self.x[i]
+            u   = self.u[i]
+            x_prev = self.x[i-1]
+            u_prev = self.u[i-1]
+            lam = self.lam[i]
+            lam_prev = self.lam[i-1]
+            nu  = self.nu[i]
+            t  = self.t[i]
+
+            self.r_lam[i] = x - self.x0
+
+            self.r_x[i] = self.jac_x_l(x,u) - \
+                np.dot(np_t(self.jac_x_f(x,u)), lam) + lam_prev + \
+                np.dot(np_t(self.jac_x_g(x,u)), nu)
+
+            self.r_u[i] = self.jac_u_l(x,u) - \
+                np.dot(np_t(self.jac_u_f(x,u)), lam)  + \
+                np.dot(np_t(self.jac_u_g(x,u)), nu)
+
+            self.r_nu[i] = self.g(x,u) + t 
+            self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
+
+            for i in range(1,N):
+                x   = self.x[i]
+                u   = self.u[i]
+                x_prev = self.x[i-1]
+                u_prev = self.u[i-1]
+                lam = self.lam[i]
+                lam_prev = self.lam[i-1]
+                nu  = self.nu[i]
+                t  = self.t[i]
+
+                self.r_lam[i] = x - self.integrator.eval(x_prev, u_prev)
+
+                self.r_x[i] = self.jac_x_l(x,u) - \
+                    np.dot(np_t(self.jac_x_f(x,u)), lam) + lam_prev + \
+                    np.dot(np_t(self.jac_x_g(x,u)), nu)
+
+                self.r_u[i] = self.jac_u_l(x,u) - \
+                    np.dot(np_t(self.jac_u_f(x,u)), lam)  + \
+                    np.dot(np_t(self.jac_u_g(x,u)), nu)
+
+                self.r_nu[i] = self.g(x,u) + t 
+                self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
+
+            i = N
+            x   = self.x[i]
+            x_prev = self.x[i-1]
+            u_prev = self.u[i-1]
+            lam = self.lam[i]
+            lam_prev = self.lam[i-1]
+            nu  = self.nu[i]
+            t  = self.t[i]
+
+            self.r_lam[i] = x - self.integrator.eval(x_prev, u_prev)
+
+            self.r_x[i] = self.jac_x_l(x,u) - \
+                np.dot(np_t(self.jac_x_f(x,u)), lam) + lam_prev + \
+                np.dot(np_t(self.jac_x_gN(x)), nu)
+
+            tmp = self.gN(x).full()
+            if not tmp:
+                tmp = np.zeros((0,1))
+
+            self.r_nu[i] = tmp + t 
+            self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ngN,1)) 
 
         return
 
     def eliminate_s_lam(self):
-        # TODO(andrea): add actual Hessian update!
         N = self.dims.N
         for i in range(N):
             VT_inv = np.diagflat(np.divide(self.nu[i], self.t[i]))
             C = self.C[i]
             D = self.D[i]
-            self.Hxx_t[i] = self.Hxx[i] + np.dot(np.dot(np.transpose(C), VT_inv), C)
-            self.Huu_t[i] = self.Huu[i] + np.dot(np.dot(np.transpose(D), VT_inv), D)
-            self.Hxu_t[i] = self.Hxu[i] + np.dot(np.dot(np.transpose(C), VT_inv), D)
+
+            # matrices
+            self.Hxx_t[i] = self.Hxx[i] + np.dot(np.dot(np_t(C), VT_inv), C)
+            self.Huu_t[i] = self.Huu[i] + np.dot(np.dot(np_t(D), VT_inv), D)
+            self.Hxu_t[i] = self.Hxu[i] + np.dot(np.dot(np_t(C), VT_inv), D)
+
+            # vectors
+            t = self.t[i]
+
+            tmp = np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
+            import pdb; pdb.set_trace()
+
+            self.r_x_t[i] = self.r_x[i] + \
+                np.dot(np.dot(np_t(C), VT_inv), self.r_nu[i]) - \
+                np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
+                
+            self.r_u_t[i] = self.r_u[i] + \
+                np.dot(np.dot(np_t(D), VT_inv), self.r_nu[i]) - \
+                np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
 
         VT_inv = np.diagflat(np.divide(self.nu[N], self.t[N]))
         C = self.C[N]
-        self.Hxx_t[N] = self.Hxx[N] + np.dot(np.dot(np.transpose(C), VT_inv), C)
+        self.Hxx_t[N] = self.Hxx[N] + np.dot(np.dot(np_t(C), VT_inv), C)
 
         return
 
@@ -387,18 +498,26 @@ class Ocp:
         N = self.dims.N
         self.P[N] = self.Hxx_t[N]
         for i in range(N-1,0,-1):
+            # matrix recursion
             A = self.A[i]
             B = self.B[i]
             Q = self.Hxx_t[i]
             R = self.Huu_t[i]
             P = self.P[i+1]
 
-            Sigma = -np.dot(np.dot(np.dot(np.transpose(A), P), B), \
-                np.linalg.inv(R + np.dot(np.dot(np.transpose(B), P), B)))
+            Sigma = -np.dot(np.dot(np.dot(np_t(A), P), B), \
+                np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B)))
 
-            self.P[i] = Q + np.dot(np.dot(np.transpose(A), P), A) + \
-                    np.dot(np.dot(np.dot(Sigma, np.transpose(B)), P), A)
-            print(self.P[i])
+            self.P[i] = Q + np.dot(np.dot(np_t(A), P), A) + \
+                    np.dot(np.dot(np.dot(Sigma, np_t(B)), P), A)
+
+            # vector recursion
+            p = self.p[i+1]
+            r_x_t = self.r_x_t[i]
+            r_u_t = self.r_u_t[i]
+            r_lam = self.r_lam[i]
+            self.p[i] = r_x_t + np.dot(np.transpoe(A), np.dot(P, r_lam_t) + p) \
+                + np.dot(Sigma, ru_t + np.dot(np.transpoe(B), np.dot(P, r_lam) + p))
 
         return
 

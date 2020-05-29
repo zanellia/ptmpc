@@ -25,18 +25,17 @@ class Integrator():
 
         DT = Td/M
         f  = ca.Function('f', [x, u], [xdot])
-        X0 = ca.MX.sym('X0', 2, 1)
-        U  = ca.MX.sym('U', 1, 1)
-        X  = X0
+        X  = x
 
         for j in range(M):
-            k1 = f(X, U)
-            k2 = f(X + DT/2 * k1, U)
-            k3 = f(X + DT/2 * k2, U)
-            k4 = f(X + DT * k3, U)
+            k1 = f(X, u)
+            k2 = f(X + DT/2 * k1, u)
+            k3 = f(X + DT/2 * k2, u)
+            k4 = f(X + DT * k3, u)
             X=X+DT/6*(k1 + 2*k2 + 2*k3 +k4)
 
-        self.xplus = ca.Function('x_plus', [X0, U], [X])
+        self.xplus = ca.Function('x_plus', [x, u], [X])
+        self.xplus_expr = X
 
     def eval(self, x, u):
         """

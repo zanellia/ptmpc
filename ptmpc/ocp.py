@@ -38,9 +38,9 @@ class Ocp:
         ----------
         dims : OcpDims 
             dimensions of the optimal control problem
-        x    : CasADi SX
+        x    : CasADi MX
             CasADi symbolic variables representing the states
-        u    : CasADi SX
+        u    : CasADi MX
             CasADi symbolic variables representing the inputs
         lc_  : CasADi expression 
             lc: R^{nx} x R^{nu} -> R (continuous-time Lagrange term)
@@ -174,7 +174,6 @@ class Ocp:
             for i in range(NGN):
                 barr_term = barr_term + -tau*np.log(-gN(Xk)[i])
 
-            import pdb; pdb.set_trace()
             f = f + lcN(Xk) + barr_term
         else:
 
@@ -205,6 +204,86 @@ class Ocp:
         opts = {}
         self.nlp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);
 
+        #----------------------------------------------------------------------
+        #                       partially tightened RTI 
+        #----------------------------------------------------------------------
+
+        # define CasADi functions for linearization
+
+        nabla_x_f = ca.Function('nabla_x_f', [integrator.x, integrator.u], \
+            [ca.jacobian(integrator.xplus_expr, x)])
+        self.nabla_x_f = nabla_x_f
+
+        nabla_u_f = ca.Function('nabla_u_f', [integrator.x, integrator.u], \
+            [ca.jacobian(integrator.xplus_expr, u)])
+        self.nabla_u_f = nabla_u_f
+
+        nabla_xx_l = ca.Function('nabla_xx_l', [x, u], \
+            [ca.hessian(lc_, x)[0]])
+        self.nabla_xx_l = nabla_xx_l
+
+        nabla_uu_l = ca.Function('nabla_uu_l', [x, u], \
+            [ca.hessian(lc_, u)[0]])
+        self.nabla_uu_l = nabla_uu_l
+
+        nabla_xx_lN = ca.Function('nabla_xx_lN', [x], \
+            [ca.hessian(lcN_, x)[0]])
+        self.nabla_xx_lN = nabla_xx_lN
+
+        # these are the primal-dual iterates of the partially tightened RTI
+        self.x = []
+        self.u = []
+        self.lam = []
+        self.s = []
+        self.nu = []
+
+        for i in range(N):
+            self.x.append(np.zeros((NX,1)))
+            self.u.append(np.zeros((NU,1)))
+            self.lam.append(np.zeros((NX,1)))
+            self.s.append(np.zeros((NG,1)))
+            self.nu.append(np.zeros((NG,1)))
+
+        self.x.append(np.zeros((NX,1)))
+        self.lam.append(np.zeros((NX,1)))
+        self.s.append(np.zeros((NGN,1)))
+        self.nu.append(np.zeros((NGN,1)))
+
+        # these are the variables associated with the linearized problem
+        self.A = []
+        self.B = []
+        self.C = []
+        self.D = []
+        self.Hxx = []
+        self.Huu = []
+        self.Hxu = []
+        self.Hxx_t = []
+        self.Huu_t = []
+        self.Hxu_t = []
+
+        for i in range(N):
+            self.A.append(np.zeros((NX,NX)))
+            self.B.append(np.zeros((NX,NU)))
+            self.C.append(np.zeros((NG,NX)))
+            self.D.append(np.zeros((NG,NU)))
+            self.Hxx.append(np.zeros((NX,NX)))
+            self.Huu.append(np.zeros((NU,NU)))
+            self.Hxu.append(np.zeros((NU,NX)))
+            self.Hxx_t.append(np.zeros((NX,NX)))
+            self.Huu_t.append(np.zeros((NU,NU)))
+            self.Hxu_t.append(np.zeros((NU,NX)))
+
+        self.C.append(np.zeros((NGN,NX)))
+        self.D.append(np.zeros((NGN,NU)))
+        self.Hxx.append(np.zeros((NX,NX)))
+        self.Hxx_t.append(np.zeros((NX,NX)))
+
+        # these are the variables associated with the Riccati recursion 
+        self.P = []
+
+        for i in range(N+1):
+            self.P.append(np.zeros((NX,1)))
+
     def update_x0(self, x0):
         """
         Update the initial condition in the OCP
@@ -220,8 +299,60 @@ class Ocp:
 
     def eval(self):
         """
-        Solve OCP
+        Compute exact solution to OCP
         """
         sol = self.nlp_solver(x0=self._w0, lbx=self._lbw, ubx=self._ubw,\
             lbg=self._lbc, ubg=self._ubc)
+
         return sol
+
+    def linearize(self):
+        N = self.dims.N
+        for i in range(N):
+            x = self.x[i]
+            u = self.u[i]
+            self.A[i] = self.nabla_x_f(x,u).full()
+            self.B[i] = self.nabla_u_f(x,u).full()
+            # TODO(andrea): add Hessian contributions from dynamics and constraints?
+            self.Hxx[i] = self.nabla_xx_l(x,u).full()
+            self.Huu[i] = self.nabla_uu_l(x,u).full()
+
+        x = self.x[N]
+        self.Hxx[N] = self.nabla_xx_lN(x).full()
+
+        return
+
+    def eliminate_s_lam(self):
+        # TODO(andrea): add actual Hessian update!
+        N = self.dims.N
+        for i in range(N):
+            self.Hxx_t[i] = self.Hxx[i]
+            self.Huu_t[i] = self.Huu[i]
+
+        self.Hxx_t[N] = self.Hxx[N]
+
+        return
+
+    def backward_riccati(self):
+        N = self.dims.N
+        self.P[N] = self.Hxx_t[N]
+        for i in range(N-1,0,-1):
+            A = self.A[i]
+            B = self.B[i]
+            Q = self.Hxx_t[i]
+            R = self.Huu_t[i]
+            P = self.P[i+1]
+
+            Sigma = -np.dot(np.dot(np.dot(np.transpose(A), P), B), \
+                np.linalg.inv(R + np.dot(np.dot(np.transpose(B), P), B)))
+
+            self.P[i] = Q + np.dot(np.dot(np.transpose(A), P), A) + \
+                    np.dot(np.dot(np.dot(Sigma, np.transpose(B)), P), A)
+
+            print(self.P[i])
+            
+        return
+
+    def forward_riccati(self):
+        return
+

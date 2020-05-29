@@ -68,6 +68,7 @@ class Ocp:
         self.lc = lc
         self.lcN = lcN
         self.g = g
+
         self.gN = gN
         self.fc = fc
 
@@ -83,29 +84,69 @@ class Ocp:
 
         # create integrator
         integrator = Integrator(x, u, fc_, Td)
+        self.integrator = integrator
 
         # build OCP
         w=[]
         w0 = []
         lbw = []
         ubw = []
-        g=[]
-        lbg = []
-        ubg = []
-        Xk = ca.MX.sym('X0', 2, 1)
+        c=[]
+        lbc = []
+        ubc = []
+        Xk = ca.MX.sym('X0', NX, 1)
         w += [Xk]
         lbw += [0, 0]
         ubw += [0, 0]
         w0 += [0, 0]
         f = 0
-
+    
         # formulate the NLP
         for k in range(M):
 
             # new NLP variable for the control
             Uk = ca.MX.sym('U_' + str(k), NU, 1)
 
-            f = f + lc(Xk, Uk)
+            # update variable list
+            w   += [Uk]
+            lbw += [-np.inf*np.ones((NU, 1))]
+            ubw += [np.inf*np.ones((NU, 1))]
+            w0  += [np.zeros((NU, 1))]
+
+            # add cost contribution
+            f = f + Td*lc(Xk, Uk)
+
+            # add constraints
+            c += [g(Xk, Uk)]
+            lbc += [-np.inf*np.ones((NG, 1))]
+            ubc += [np.zeros((NG, 1))]
+
+            # integrate till the end of the interval
+            Xk_end = integrator.xplus(Xk, Uk)
+
+            # new NLP variable for state at end of interval
+            Xk = ca.MX.sym('X_' + str(k+1), NX, 1)
+            w   += [Xk]
+            lbw += [-np.inf*np.ones((NX, 1))]
+            ubw += [np.inf*np.ones((NX, 1))]
+            w0  += [np.zeros((NX, 1))]
+
+            # add equality constraint
+            c   += [Xk_end-Xk]
+            lbc += [np.zeros((NX, 1))]
+            ubc += [np.zeros((NX, 1))]
+
+        for k in range(M, N):
+
+            # new NLP variable for the control
+            Uk = ca.MX.sym('U_' + str(k), NU, 1)
+
+            # compute barrier term
+            barr_term = 0
+            for i in range(NG):
+                barr_term = barr_term + -tau*np.log(-g(Xk, Uk)[i])
+
+            f = f + Td*lc(Xk, Uk) + barr_term
 
             w   += [Uk]
             lbw += [-np.inf*np.ones((NU, 1))]
@@ -123,19 +164,64 @@ class Ocp:
             w0  += [np.zeros((NX, 1))]
 
             # add equality constraint
-            g   += [Xk_end-Xk]
-            lbg += [np.zeros((NX, 1))]
-            ubg += [np.zeros((NX, 1))]
+            c   += [Xk_end-Xk]
+            lbc += [np.zeros((NX, 1))]
+            ubc += [np.zeros((NX, 1))]
 
-        f = f + lcN(Xk_end)
+        if M == N:
+            # compute barrier term
+            barr_term = 0
+            for i in range(NGN):
+                barr_term = barr_term + -tau*np.log(-gN(Xk)[i])
 
-        g = ca.vertcat(*g)
+            import pdb; pdb.set_trace()
+            f = f + lcN(Xk) + barr_term
+        else:
+
+            f = f + lcN(Xk)
+
+            # add constraints
+            c += [gN(Xk)]
+            lbc += [np.zeros((NGN, 1))]
+            ubc += [np.zeros((NGN, 1))]
+
+        c = ca.vertcat(*c)
         w = ca.vertcat(*w)
+        
+        # convert lists to numpy arrays
+        lbw_a = np.vstack(lbw)
+            
+        self._lbw = np.vstack(lbw)
+        self._ubw = np.vstack(ubw)
+
+        self._lbc = np.vstack(lbc)
+        self._ubc = np.vstack(ubc)
+
+        self._w0 = np.vstack(w0)
 
         # create an NLP solver
-        prob = {'f': f, 'x': w, 'g': g}
-        opts = {'ipopt': {'print_level': 0}}
-        self.__nlp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);
+        prob = {'f': f, 'x': w, 'g': c}
+        # opts = {'ipopt': {'print_level': 2}}
+        opts = {}
+        self.nlp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);
 
-        
+    def update_x0(self, x0):
+        """
+        Update the initial condition in the OCP
 
+        Parameters:
+        -----------
+        x0 : numpy array
+            new value of x0
+        """
+        for i in range(self.dims.nx):
+            self._lbw[i] = x0[i]
+            self._ubw[i] = x0[i]
+
+    def eval(self):
+        """
+        Solve OCP
+        """
+        sol = self.nlp_solver(x0=self._w0, lbx=self._lbw, ubx=self._ubw,\
+            lbg=self._lbc, ubg=self._ubc)
+        return sol

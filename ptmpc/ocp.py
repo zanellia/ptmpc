@@ -210,6 +210,7 @@ class Ocp:
 
         # define CasADi functions for linearization
 
+        # dynamics
         nabla_x_f = ca.Function('nabla_x_f', [integrator.x, integrator.u], \
             [ca.jacobian(integrator.xplus_expr, x)])
         self.nabla_x_f = nabla_x_f
@@ -218,6 +219,7 @@ class Ocp:
             [ca.jacobian(integrator.xplus_expr, u)])
         self.nabla_u_f = nabla_u_f
 
+        # cost
         nabla_xx_l = ca.Function('nabla_xx_l', [x, u], \
             [ca.hessian(lc_, x)[0]])
         self.nabla_xx_l = nabla_xx_l
@@ -230,26 +232,43 @@ class Ocp:
             [ca.hessian(lcN_, x)[0]])
         self.nabla_xx_lN = nabla_xx_lN
 
+        # constraints
+        nabla_x_g = ca.Function('nabla_x_g', [x, u], \
+            [ca.jacobian(g_, x)])
+        self.nabla_x_g = nabla_x_g
+
+        nabla_u_g = ca.Function('nabla_u_g', [x, u], \
+            [ca.jacobian(g_, u)])
+        self.nabla_u_g = nabla_u_g
+
+        nabla_x_gN = ca.Function('nabla_x_gN', [x], \
+            [ca.jacobian(gN_, x)])
+        self.nabla_x_gN = nabla_x_gN
+
         # these are the primal-dual iterates of the partially tightened RTI
         self.x = []
         self.u = []
         self.lam = []
-        self.s = []
+        self.t = []
         self.nu = []
+
+        t_init = 0.1
+        nu_init = 0.1
 
         for i in range(N):
             self.x.append(np.zeros((NX,1)))
             self.u.append(np.zeros((NU,1)))
-            self.lam.append(np.zeros((NX,1)))
-            self.s.append(np.zeros((NG,1)))
-            self.nu.append(np.zeros((NG,1)))
+            self.lam.append(np.ones((NX,1)))
+            self.t.append(t_init*np.ones((NG,1)))
+            self.nu.append(nu_init*np.ones((NG,1)))
 
         self.x.append(np.zeros((NX,1)))
         self.lam.append(np.zeros((NX,1)))
-        self.s.append(np.zeros((NGN,1)))
-        self.nu.append(np.zeros((NGN,1)))
+        self.t.append(t_init*np.ones((NGN,1)))
+        self.nu.append(nu_init*np.ones((NGN,1)))
 
         # these are the variables associated with the linearized problem
+        # - matrices
         self.A = []
         self.B = []
         self.C = []
@@ -278,10 +297,32 @@ class Ocp:
         self.Hxx.append(np.zeros((NX,NX)))
         self.Hxx_t.append(np.zeros((NX,NX)))
 
+        # - vectors (residuals)
+        self.r_lam = []
+        self.r_x = []
+        self.r_u = []
+        self.r_nu = []
+        self.r_e = []
+
+        for i in range(N):
+            self.r_lam.append(np.zeros((NX,1)))
+            self.r_x.append(np.zeros((NX,1)))
+            self.r_u.append(np.zeros((NU,1)))
+            self.r_nu.append(np.zeros((NG,1)))
+            self.r_e.append(np.zeros((NG,1)))
+
+        self.r_lam.append(np.zeros((NX,1)))
+        self.r_x.append(np.zeros((NX,1)))
+        self.r_u.append(np.zeros((NU,1)))
+        self.r_nu.append(np.zeros((NG,1)))
+        self.r_e.append(np.zeros((NG,1)))
+
         # these are the variables associated with the Riccati recursion 
         self.P = []
+        self.p = []
 
         for i in range(N+1):
+            self.p.append(np.zeros((NX,1)))
             self.P.append(np.zeros((NX,1)))
 
     def update_x0(self, x0):
@@ -316,9 +357,12 @@ class Ocp:
             # TODO(andrea): add Hessian contributions from dynamics and constraints?
             self.Hxx[i] = self.nabla_xx_l(x,u).full()
             self.Huu[i] = self.nabla_uu_l(x,u).full()
+            self.C[i] = self.nabla_x_g(x,u).full()
+            self.D[i] = self.nabla_u_g(x,u).full()
 
         x = self.x[N]
         self.Hxx[N] = self.nabla_xx_lN(x).full()
+        self.C[N] = self.nabla_x_gN(x).full()
 
         return
 
@@ -326,10 +370,16 @@ class Ocp:
         # TODO(andrea): add actual Hessian update!
         N = self.dims.N
         for i in range(N):
-            self.Hxx_t[i] = self.Hxx[i]
-            self.Huu_t[i] = self.Huu[i]
+            VT_inv = np.diagflat(np.divide(self.nu[i], self.t[i]))
+            C = self.C[i]
+            D = self.D[i]
+            self.Hxx_t[i] = self.Hxx[i] + np.dot(np.dot(np.transpose(C), VT_inv), C)
+            self.Huu_t[i] = self.Huu[i] + np.dot(np.dot(np.transpose(D), VT_inv), D)
+            self.Hxu_t[i] = self.Hxu[i] + np.dot(np.dot(np.transpose(C), VT_inv), D)
 
-        self.Hxx_t[N] = self.Hxx[N]
+        VT_inv = np.diagflat(np.divide(self.nu[N], self.t[N]))
+        C = self.C[N]
+        self.Hxx_t[N] = self.Hxx[N] + np.dot(np.dot(np.transpose(C), VT_inv), C)
 
         return
 
@@ -348,9 +398,8 @@ class Ocp:
 
             self.P[i] = Q + np.dot(np.dot(np.transpose(A), P), A) + \
                     np.dot(np.dot(np.dot(Sigma, np.transpose(B)), P), A)
-
             print(self.P[i])
-            
+
         return
 
     def forward_riccati(self):

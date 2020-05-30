@@ -344,7 +344,26 @@ class Ocp:
 
         for i in range(N+1):
             self.p.append(np.zeros((NX,1)))
-            self.P.append(np.zeros((NX,1)))
+            self.P.append(np.zeros((NX,NX)))
+
+        # solution of linearized problem
+
+        self.du = []
+        self.dx = []
+        self.dlam = []
+        self.dnu = []
+        self.dt = []
+
+        for i in range(N):
+            self.du.append(np.zeros((NU,1)))
+            self.dx.append(np.zeros((NX,1)))
+            self.dt.append(np.zeros((NG,1)))
+            self.dlam.append(np.zeros((NX,1)))
+            self.dnu.append(np.zeros((NG,1)))
+
+        self.dx.append(np.zeros((NX,1)))
+        self.dt.append(np.zeros((NGN,1)))
+        self.dnu.append(np.zeros((NGN,1)))
 
         self.x0 = np.zeros((NX,1))
 
@@ -373,7 +392,7 @@ class Ocp:
 
     def linearize(self):
         N = self.dims.N
-        for i in range(N):
+        for i in range(0,N):
             x = self.x[i]
             u = self.u[i]
 
@@ -386,13 +405,36 @@ class Ocp:
             self.C[i] = self.jac_x_g(x,u).full()
             self.D[i] = self.jac_u_g(x,u).full()
 
-            x = self.x[N]
-            self.Hxx[N] = self.jac_xx_lN(x).full()
-            self.C[N] = self.jac_x_gN(x).full()
+        x = self.x[N]
+        self.Hxx[N] = self.jac_xx_lN(x).full()
+        self.C[N] = self.jac_x_gN(x).full()
 
-            # vectors
-            i = 0
+        # vectors
+        i = 0
 
+        x   = self.x[i]
+        u   = self.u[i]
+        x_prev = self.x[i-1]
+        u_prev = self.u[i-1]
+        lam = self.lam[i]
+        lam_prev = self.lam[i-1]
+        nu  = self.nu[i]
+        t  = self.t[i]
+
+        self.r_lam[i] = -x + self.x0
+
+        self.r_x[i] = self.jac_x_l(x,u).full() + \
+            np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
+            np.dot(np_t(self.jac_x_g(x,u).full()), nu)
+
+        self.r_u[i] = self.jac_u_l(x,u).full() + \
+            np.dot(np_t(self.jac_u_f(x,u).full()), lam)  + \
+            np.dot(np_t(self.jac_u_g(x,u).full()), nu)
+
+        self.r_nu[i] = self.g(x,u).full() + t 
+        self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
+
+        for i in range(1,N):
             x   = self.x[i]
             u   = self.u[i]
             x_prev = self.x[i-1]
@@ -402,63 +444,42 @@ class Ocp:
             nu  = self.nu[i]
             t  = self.t[i]
 
-            self.r_lam[i] = x - self.x0
+            tmp = self.integrator.eval(x_prev, u_prev)
 
-            self.r_x[i] = self.jac_x_l(x,u).full() - \
-                np.dot(np_t(self.jac_x_f(x,u).full()), lam) + lam_prev + \
+            self.r_lam[i] = -x + self.integrator.eval(x_prev, u_prev)
+
+            self.r_x[i] = self.jac_x_l(x,u).full() + \
+                np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
                 np.dot(np_t(self.jac_x_g(x,u).full()), nu)
 
-            self.r_u[i] = self.jac_u_l(x,u).full() - \
-                np.dot(np_t(self.jac_u_f(x,u).full()), lam)  + \
+            self.r_u[i] = self.jac_u_l(x,u).full() + \
+                np.dot(np_t(self.jac_u_f(x,u).full()), lam)  - \
                 np.dot(np_t(self.jac_u_g(x,u).full()), nu)
 
             self.r_nu[i] = self.g(x,u).full() + t 
             self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
 
-            for i in range(1,N):
-                x   = self.x[i]
-                u   = self.u[i]
-                x_prev = self.x[i-1]
-                u_prev = self.u[i-1]
-                lam = self.lam[i]
-                lam_prev = self.lam[i-1]
-                nu  = self.nu[i]
-                t  = self.t[i]
+        i = N
+        x   = self.x[i]
+        x_prev = self.x[i-1]
+        u_prev = self.u[i-1]
+        lam = self.lam[i]
+        lam_prev = self.lam[i-1]
+        nu  = self.nu[i]
+        t  = self.t[i]
 
-                self.r_lam[i] = x - self.integrator.eval(x_prev, u_prev)
+        self.r_lam[i] = -x + self.integrator.eval(x_prev, u_prev)
 
-                self.r_x[i] = self.jac_x_l(x,u).full() - \
-                    np.dot(np_t(self.jac_x_f(x,u).full()), lam) + lam_prev + \
-                    np.dot(np_t(self.jac_x_g(x,u).full()), nu)
+        self.r_x[i] = self.jac_x_l(x,u).full() + \
+            np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
+            np.dot(np_t(self.jac_x_gN(x).full()), nu)
 
-                self.r_u[i] = self.jac_u_l(x,u).full() - \
-                    np.dot(np_t(self.jac_u_f(x,u).full()), lam)  + \
-                    np.dot(np_t(self.jac_u_g(x,u).full()), nu)
+        tmp = self.gN(x).full()
+        if not tmp:
+            tmp = np.zeros((0,1))
 
-                self.r_nu[i] = self.g(x,u).full() + t 
-                self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
-
-            i = N
-            x   = self.x[i]
-            x_prev = self.x[i-1]
-            u_prev = self.u[i-1]
-            lam = self.lam[i]
-            lam_prev = self.lam[i-1]
-            nu  = self.nu[i]
-            t  = self.t[i]
-
-            self.r_lam[i] = x - self.integrator.eval(x_prev, u_prev)
-
-            self.r_x[i] = self.jac_x_l(x,u).full() - \
-                np.dot(np_t(self.jac_x_f(x,u).full()), lam) + lam_prev + \
-                np.dot(np_t(self.jac_x_gN(x).full()), nu)
-
-            tmp = self.gN(x).full()
-            if not tmp:
-                tmp = np.zeros((0,1))
-
-            self.r_nu[i] = tmp + t 
-            self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ngN,1)) 
+        self.r_nu[i] = tmp + t 
+        self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ngN,1)) 
 
         return
 
@@ -477,7 +498,6 @@ class Ocp:
             # vectors
             t = self.t[i]
 
-            tmp = np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
 
             self.r_x_t[i] = self.r_x[i] + \
                 np.dot(np.dot(np_t(C), VT_inv), self.r_nu[i]) - \
@@ -496,7 +516,7 @@ class Ocp:
     def backward_riccati(self):
         N = self.dims.N
         self.P[N] = self.Hxx_t[N]
-        for i in range(N-1,0,-1):
+        for i in range(N-1,-1,-1):
             # matrix recursion
             A = self.A[i]
             B = self.B[i]
@@ -521,5 +541,107 @@ class Ocp:
         return
 
     def forward_riccati(self):
+        N = self.dims.N
+
+        A = self.A[0]
+        B = self.B[0]
+        Q = self.Hxx_t[0]
+        R = self.Huu_t[0]
+        P = self.P[1]
+        p = self.p[1]
+        P_i = self.P[0]
+        p_i = self.p[0]
+        r_u_t = self.r_u_t[0]
+        r_lam = self.r_lam[0]
+        Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
+        Kappa = -np.dot(Gamma, np.dot( np_t(B), np.dot(P, A)))
+        kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
+
+        self.dx[0] = -self.r_lam[0] 
+        import pdb; pdb.set_trace()
+        self.du[0] = np.dot(Kappa, self.dx[0]) + kappa
+        self.dlam[0] = np.dot(P_i, self.dx[0]) + p_i
+
+        self.dx[1] = np.dot(A, self.dx[0]) + np.dot(B, self.du[0]) + self.r_lam[1] 
+        import pdb; pdb.set_trace()
+
+        for i in range(1, N-1):
+            A = self.A[i]
+            B = self.B[i]
+            Q = self.Hxx_t[i]
+            R = self.Huu_t[i]
+            P = self.P[i+1]
+            p = self.p[i+1]
+            P_i = self.P[i]
+            p_i = self.p[i]
+            r_u_t = self.r_u_t[i]
+            r_lam = self.r_lam[i+1]
+            Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
+            Kappa = -np.dot(Gamma, np.dot( np_t(B), np.dot(P, A)))
+            kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
+
+            self.dx[i+1] = np.dot(A, self.dx[i]) + np.dot(B, self.du[i]) + r_lam
+            self.du[i] = np.dot(Kappa, self.dx[i-1]) + kappa
+            self.dlam[i] = np.dot(P_i, self.dx[i]) + p_i
+
         return
 
+    def expand_solution(self):
+        N = self.dims.N
+        for i in range(N):
+            NG = self.dims.ng
+            VT_inv = np.diagflat(np.divide(self.nu[i], self.t[i]))
+            C = self.C[i]
+            D = self.D[i]
+            r_nu = self.r_nu[i]
+            nu = self.nu[i]
+            dx = self.dx[i]
+            du = self.du[i]
+            e = self.e[i]
+            t = self.t[i]
+
+            self.dnu[i] = np.dot(np.diagflat(np.divide(nu, t)), r_nu - \
+                np.dot(np.diagflat(np.divide(np.ones((NG,1)), nu)), e) + \
+                np.dot(C, dx) + np.dot(D, du))
+
+            self.dt[i] = -np.dot(np.diagflat(np.divide(np.ones((NG,1)), nu)), np.dot(np.diagflat(t), nu) + e)
+
+
+        i = N
+        NGN = self.dims.ngN
+        VT_inv = np.diagflat(np.divide(self.nu[i], self.t[i]))
+        C = self.C[i]
+        D = self.D[i]
+        r_nu = self.r_nu[i]
+        nu = self.nu[i]
+        dx = self.dx[i]
+        e = self.e[i]
+        t = self.t[i]
+
+        self.dnu[i] = np.dot(np.diagflat(np.divide(nu, t)), r_nu - \
+            np.dot(np.diagflat(np.divide(np.ones((NGN,1)), nu)), e) + \
+            np.dot(C, dx))
+
+        self.dt[i] = -np.dot(np.diagflat(np.divide(np.ones((NGN,1)), nu)), np.dot(np.diagflat(t), nu) + e)
+
+    def primal_dual_step(self, alpha = 1.0):
+        N = self.dims.N
+        for i in range(N):
+            self.x[i] = self.x[i] + self.dx[i]
+            self.u[i] = self.u[i] + self.du[i]
+            self.lam[i] = self.lam[i] + self.dlam[i]
+            self.t[i] = self.t[i] + self.dt[i]
+            self.nu[i] = self.nu[i] + self.dnu[i]
+
+        i = N
+        self.x[i] = self.x[i] + self.dx[i]
+        self.t[i] = self.t[i] + self.dt[i]
+        self.nu[i] = self.nu[i] + self.dnu[i]
+
+    def pt_rti(self):
+        self.linearize()
+        self.eliminate_s_lam()
+        self.backward_riccati()
+        self.forward_riccati()
+        self.expand_solution()
+        self.primal_dual_step()

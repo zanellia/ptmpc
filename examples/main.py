@@ -5,19 +5,19 @@ import matplotlib.pyplot as plt
 
 NX = 2
 NU = 1
-NG = 2
+NG = 0
 NGN = 0
-T = 5.0
+T = 1.0
 # N = 20
 N = 2
 # M = 2
 M = 0
-lbu = -1.0
-ubu = 1.0
-tau = 0.01
+lbu = -100.0
+ubu = 100.0
+tau = 0.1
 niter = 100
 
-x0 = np.array([1.0, -10.0])
+x0 = np.array([[2.0], [-1.0]])
 
 x = ca.MX.sym('x', NX, 1)
 u = ca.MX.sym('u', NU, 1)
@@ -28,7 +28,8 @@ QN = 1.0*Q
 
 lc  = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(Q, x)) + 1.0/2.0*ca.mtimes(u.T, ca.mtimes(R, u))
 lcN = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(QN, x))
-g = ca.vertcat(u - ubu, -u + lbu)
+# g = ca.vertcat(u - ubu, -u + lbu)
+g = []
 gN = [] 
 fc = ca.vertcat(-x[0] + 0.1 * x[1], -0.5*x[1] + u[0])
 
@@ -40,9 +41,18 @@ ocp.update_x0(x0)
 sol = ocp.eval()
 
 # partially tightened RTI
+ocp.linearize()
 for i in range(niter):
-    ocp.pt_rti()
-    print(ocp.dx)
+
+    ocp.eliminate_s_lam()
+    ocp.update_vectors_stage_M()
+    ocp.backward_riccati()
+    ocp.forward_riccati()
+    ocp.expand_solution()
+    ocp.compute_qp_res()
+    ocp.primal_dual_step()
+    import pdb; pdb.set_trace()
+    # ocp.pt_rti()
 
 plt.figure()
 plt.subplot(211)

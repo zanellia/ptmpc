@@ -246,7 +246,7 @@ class Ocp:
 
         jac_x_lN = ca.Function('jac_x_lN', [x], \
             [ca.jacobian(lc_, x)[0]])
-        self.jac_x_l = jac_x_l
+        self.jac_x_lN = jac_x_lN
 
         # constraints
         jac_x_g = ca.Function('jac_x_g', [x, u], \
@@ -414,33 +414,31 @@ class Ocp:
 
         x   = self.x[i]
         u   = self.u[i]
-        x_prev = self.x[i-1]
-        u_prev = self.u[i-1]
         lam = self.lam[i]
-        lam_prev = self.lam[i-1]
+        lam_next = self.lam[i+1]
         nu  = self.nu[i]
         t  = self.t[i]
 
         self.r_lam[i] = -x + self.x0
 
         self.r_x[i] = self.jac_x_l(x,u).full() + \
-            np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
+            np.dot(np_t(self.jac_x_f(x,u).full()), lam_next) - lam + \
             np.dot(np_t(self.jac_x_g(x,u).full()), nu)
 
         self.r_u[i] = self.jac_u_l(x,u).full() + \
-            np.dot(np_t(self.jac_u_f(x,u).full()), lam)  + \
+            np.dot(np_t(self.jac_u_f(x,u).full()), lam_next)  + \
             np.dot(np_t(self.jac_u_g(x,u).full()), nu)
 
         self.r_nu[i] = self.g(x,u).full() + t 
         self.e[i] = np.dot(np.diagflat(t), nu) - self.tau*np.ones((self.dims.ng,1)) 
 
-        for i in range(1,N):
+        for i in range(1,N-1):
             x   = self.x[i]
             u   = self.u[i]
             x_prev = self.x[i-1]
             u_prev = self.u[i-1]
             lam = self.lam[i]
-            lam_prev = self.lam[i-1]
+            lam_next = self.lam[i+1]
             nu  = self.nu[i]
             t  = self.t[i]
 
@@ -449,11 +447,11 @@ class Ocp:
             self.r_lam[i] = -x + self.integrator.eval(x_prev, u_prev)
 
             self.r_x[i] = self.jac_x_l(x,u).full() + \
-                np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
+                np.dot(np_t(self.jac_x_f(x,u).full()), lam_next) - lam + \
                 np.dot(np_t(self.jac_x_g(x,u).full()), nu)
 
             self.r_u[i] = self.jac_u_l(x,u).full() + \
-                np.dot(np_t(self.jac_u_f(x,u).full()), lam)  - \
+                np.dot(np_t(self.jac_u_f(x,u).full()), lam_next)  - \
                 np.dot(np_t(self.jac_u_g(x,u).full()), nu)
 
             self.r_nu[i] = self.g(x,u).full() + t 
@@ -464,14 +462,13 @@ class Ocp:
         x_prev = self.x[i-1]
         u_prev = self.u[i-1]
         lam = self.lam[i]
-        lam_prev = self.lam[i-1]
         nu  = self.nu[i]
         t  = self.t[i]
 
         self.r_lam[i] = -x + self.integrator.eval(x_prev, u_prev)
 
-        self.r_x[i] = self.jac_x_l(x,u).full() + \
-            np.dot(np_t(self.jac_x_f(x,u).full()), lam) - lam_prev + \
+        self.r_x[i] = self.jac_x_lN(x).full() + \
+             - lam + \
             np.dot(np_t(self.jac_x_gN(x).full()), nu)
 
         tmp = self.gN(x).full()

@@ -8,12 +8,14 @@ NU = 1
 NG = 2
 NGN = 0
 T = 5.0
-N = 20
+# N = 20
+N = 2
 # M = 2
 M = 0
 lbu = -1.0
 ubu = 1.0
 tau = 0.01
+niter = 100
 
 x0 = np.array([1.0, -10.0])
 
@@ -37,10 +39,10 @@ ocp = pt.ocp.Ocp(dims, x, u, lc, lcN, g, gN, fc, T, tau)
 ocp.update_x0(x0)
 sol = ocp.eval()
 
-# linearize 
-ocp.linearize()
-ocp.eliminate_s_lam()
-ocp.backward_riccati()
+# partially tightened RTI
+for i in range(niter):
+    ocp.pt_rti()
+    print(ocp.dx)
 
 plt.figure()
 plt.subplot(211)

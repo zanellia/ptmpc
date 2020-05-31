@@ -874,4 +874,5 @@ class Ocp:
         self.forward_riccati()
         if ng > 0 or ngN > 0:
             self.expand_solution()
+        compute_qp_res()
         self.primal_dual_step()

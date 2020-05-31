@@ -269,8 +269,8 @@ class Ocp:
         self.t = []
         self.nu = []
 
-        t_init = 0.00001
-        nu_init = 0.0001
+        t_init = 1.0000
+        nu_init = 1.000
 
         for i in range(N):
             self.x.append(np.zeros((NX,1)))
@@ -491,6 +491,7 @@ class Ocp:
                     np.dot(np_t(self.jac_u_g(x,u).full()), nu)
 
                 self.r_nu[i] = self.g(x,u).full() + t 
+
                 self.e[i] = np.dot(np.diagflat(t), nu) - \
                     self.tau*np.ones((self.dims.ng,1)) 
             else:
@@ -558,12 +559,12 @@ class Ocp:
                 np.dot(np_t(A), dlam_next) - dlam + \
                 np.dot(np_t(C), dnu) + self.r_x_t[i]
 
-            self.r_u_qp[i] = np.dot(R,du) + np.dot(np_t(B), dlam_next)  + \
+            self.r_u_qp[i] = np.dot(R,du) + np.dot(np_t(B), dlam_next) + \
                 np.dot(np_t(D), dnu) + self.r_u_t[i]
 
             self.r_nu_qp[i] = np.dot(C,dx) + np.dot(D,du) + dt + self.r_nu[i]  
             self.e_qp[i] = np.dot(np.diagflat(t), dnu) + \
-                np.dot(np.diagflat(dt), nu) + self.e[i] 
+                np.dot(np.diagflat(nu), dt) + self.e[i] 
         else:
             self.r_x_qp[i] = np.dot(Q,dx) + \
                 np.dot(np_t(A), dlam_next) - dlam + \
@@ -612,8 +613,9 @@ class Ocp:
 
                 self.r_nu_qp[i] = np.dot(C,dx) + np.dot(D,du) + dt + \
                     self.r_nu[i]  
+
                 self.e_qp[i] = np.dot(np.diagflat(t), dnu) + \
-                    np.dot(np.diagflat(dt), nu) + self.e[i] 
+                    np.dot(np.diagflat(nu), dt) + self.e[i] 
             else:
                 self.r_x_qp[i] = np.dot(Q,dx) + \
                     np.dot(np_t(A), dlam_next) - dlam + \
@@ -648,7 +650,7 @@ class Ocp:
                 self.r_x[i]
 
             self.r_nu_qp[i] = np.dot(C,dx) + dt + self.r_nu[i]  
-            self.e_qp[i] = np.dot(np.diagflat(t), dnu) + np.dot(np.diagflat(dt), nu) + self.e[i] 
+            self.e_qp[i] = np.dot(np.diagflat(t), dnu) + np.dot(np.diagflat(nu), dt) + self.e[i] 
 
         print('self.r_lam_qp')
         print(self.r_lam_qp)
@@ -672,25 +674,25 @@ class Ocp:
             D = self.D[i]
 
             # matrices
-            # self.Hxx_t[i] = self.Hxx[i] + np.dot(np.dot(np_t(C), VT_inv), C)
-            # self.Huu_t[i] = self.Huu[i] + np.dot(np.dot(np_t(D), VT_inv), D)
-            # self.Hxu_t[i] = self.Hxu[i] + np.dot(np.dot(np_t(C), VT_inv), D)
-            self.Hxx_t[i] = self.Hxx[i]
-            self.Huu_t[i] = self.Huu[i]
-            self.Hxu_t[i] = self.Hxu[i]
+            self.Hxx_t[i] = self.Hxx[i] + np.dot(np.dot(np_t(C), VT_inv), C)
+            self.Huu_t[i] = self.Huu[i] + np.dot(np.dot(np_t(D), VT_inv), D)
+            self.Hxu_t[i] = self.Hxu[i] + np.dot(np.dot(np_t(C), VT_inv), D)
+            # self.Hxx_t[i] = self.Hxx[i]
+            # self.Huu_t[i] = self.Huu[i]
+            # self.Hxu_t[i] = self.Hxu[i]
 
             # vectors
             t = self.t[i]
 
-            self.r_x_t[i] = self.r_x[i]
-            # self.r_x_t[i] = self.r_x[i] + \
-            #     np.dot(np.dot(np_t(C), VT_inv), self.r_nu[i]) - \
-            #     np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
+            # self.r_x_t[i] = self.r_x[i]
+            self.r_x_t[i] = self.r_x[i] + \
+                np.dot(np.dot(np_t(C), VT_inv), self.r_nu[i]) - \
+                np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
                 
-            self.r_u_t[i] = self.r_u[i]
-            # self.r_u_t[i] = self.r_u[i] + \
-            #     np.dot(np.dot(np_t(D), VT_inv), self.r_nu[i]) - \
-            #     np.dot(np_t(D), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
+            # self.r_u_t[i] = self.r_u[i]
+            self.r_u_t[i] = self.r_u[i] + \
+                np.dot(np.dot(np_t(D), VT_inv), self.r_nu[i]) - \
+                np.dot(np_t(D), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), t)), self.e[i]))
 
         VT_inv = np.diagflat(np.divide(self.nu[N], self.t[N]))
         C = self.C[N]
@@ -808,8 +810,8 @@ class Ocp:
                 np.dot(np.diagflat(np.divide(np.ones((NG,1)), nu)), e) + \
                 np.dot(C, dx) + np.dot(D, du))
 
-            self.dt[i] = -np.dot(np.diagflat(np.divide(np.ones((NG,1)), self.dnu[i])), \
-                np.dot(np.diagflat(t), nu) + e)
+            self.dt[i] = -np.dot(np.diagflat(np.divide(np.ones((NG,1)), self.nu[i])), \
+                np.dot(np.diagflat(t), self.dnu[i]) + e)
 
         if self.dims.ngN > 0:
             i = N
@@ -828,7 +830,7 @@ class Ocp:
                 np.dot(C, dx))
 
             self.dt[i] = -np.dot(np.diagflat(np.divide(np.ones((NGN,1)), nu)), \
-                np.dot(np.diagflat(t), self.dnu[i]) + e)
+                np.dot(np.diagflat(t), dnu) + e)
 
     def primal_dual_step(self, alpha = 1.0):
         # print('r_x:',self.r_x)

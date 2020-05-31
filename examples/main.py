@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 NX = 2
 NU = 1
-NG = 0
+NG = 2
 NGN = 0
 T = 1.0
 # N = 20
@@ -28,8 +28,8 @@ QN = 1.0*Q
 
 lc  = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(Q, x)) + 1.0/2.0*ca.mtimes(u.T, ca.mtimes(R, u))
 lcN = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(QN, x))
-# g = ca.vertcat(u - ubu, -u + lbu)
-g = []
+g = ca.vertcat(u - ubu, -u + lbu)
+# g = []
 gN = [] 
 fc = ca.vertcat(-x[0] + 0.1 * x[1], -0.5*x[1] + u[0])
 

@@ -48,4 +48,7 @@ class Integrator():
             input of the system
         """
 
-        return self.xplus(x, u).full()
+        if isinstance(x, ca.MX) and isinstance(u, ca.MX):
+            return self.xplus(x, u)
+        else:
+            return self.xplus(x, u).full()

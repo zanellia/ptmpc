@@ -450,7 +450,7 @@ class Ocp:
             dW += [dNuk]
 
             Nuk_lin = ca.MX.sym('dNu_' + str(i) + '_lin', NG, 1)
-            Nu_lin +=[Nu_lin]
+            Nu_lin +=[Nuk_lin]
             p +=[Nuk_lin]
             dW0 += [np.ones((NG,1))]
 
@@ -527,38 +527,30 @@ class Ocp:
 
         r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
-        r_x_k = nabla_x_l + np.dot(nabla_f_x, Xk_lin) + \
-            - Lamk_lim_next + np.dot(nabla_g_x, Nuk_lin)
+        r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin) + \
+            - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
 
-        r_u_k = nabla_u_l + np.dot(nabla_f_u, Uk_lin) + \
-            + np.dot(nabla_g_u, Nuk_lin)
+        r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin) + \
+            ca.mtimes(nabla_u_g, Nuk_lin)
 
-        r_nu_k = np.dot(ca.transpose(nabla_g_x, Xk_lin)) + \
-            np.dot(ca.transpose(nabla_g_u, Uk_lin)) + Tk_lin
+        r_nu_k = ca.mtimes(nabla_x_g.T, Xk_lin) + ca.mtimes(nabla_u_g.T, Uk_lin) + Tk_lin
 
         # compute Hessian approximation
-        Hxx = jac_uu_l(Xk_lin, Uk_lin)
+        Huu = jac_uu_l(Xk_lin, Uk_lin)
         Hxx = jac_xx_l(Xk_lin, Uk_lin)
         Hxu = jac_xu_l(Xk_lin, Uk_lin)
 
-        Hk = np.vstack([np.hstack([Hxx, Hxu, r_x_k]), \
-                np.hstack([Hux, Huu, r_u_k]), \
-                np.hstack([ca.transpose(r_x_k, r_u_k, 1)])])
+        Hk = ca.vertcat(ca.horzcat(Hxx, Hxu, r_x_k), \
+                ca.horzcat(Hxu.T, Huu, r_u_k), \
+                ca.horzcat(ca.transpose(r_x_k), ca.transpose(r_u_k), 1))
         
         # add cost contribution
-        f = f + ca.mtimes(ca.vertcat([dXk, dUk, 1]).T, ca.mtimes(Hk, \
-                np.vertcat(ca.vertcat([dXk, dUk, 1]))))
-
-        # add equality constraints
-        c_qp += [-dXk_next + np.dot(ca.transpose(nabla_f_x), dXk) \
-            + np.dot(ca.transpose(nabla_f_u), dUk) + r_lam_k]
-
-        lbc_qp += [np.zeros((NG, 1))]
-        ubc_qp += [np.zeros((NG, 1))]
+        f = f + ca.mtimes(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
+                ca.vertcat(ca.vertcat(dXk, dUk, 1))))
 
         # add inequality constraints
-        c_qp += [np.dot(ca.transpose(nabla_g_x), dXk) \
-            + np.dot(ca.transpose(nabla_g_u), dUk) + r_nu_k]
+        c_qp += [ca.mtimes(ca.transpose(nabla_x_g), dXk) \
+            + ca.mtimes(ca.transpose(nabla_u_g), dUk) + r_nu_k]
 
         lbc_qp += [-np.inf*np.ones((NG, 1))]
         ubc_qp += [np.zeros((NG, 1))]
@@ -589,16 +581,16 @@ class Ocp:
             nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
             nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
 
-            r_lam_k = -Xk_lin + integrator(Xk_lin_prev, Uk_lin_prev)
+            r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
-            r_x_k = nabla_x_l + np.dot(nabla_f_x, Xk_lin) + \
-                - Lamk_lim_next + np.dot(nabla_g_x, Nuk_lin)
+            r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Xk_lin) + \
+                - Lamk_lim_next + ca.mtimes(nabla_x_g, Nuk_lin)
 
-            r_u_k = nabla_u_l + np.dot(nabla_f_u, Uk_lin) + \
-                + np.dot(nabla_g_u, Nuk_lin)
+            r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Uk_lin) + \
+                + ca.mtimes(nabla_u_g, Nuk_lin)
 
-            r_nu_k = np.dot(ca.transpose(nabla_g_x, Xk_lin)) + \
-                np.dot(ca.transpose(nabla_g_u, Uk_lin)) + Tk_lin
+            r_nu_k = ca.mtimes(ca.transpose(nabla_x_g, Xk_lin)) + \
+                ca.mtimes(ca.transpose(nabla_u_g, Uk_lin)) + Tk_lin
 
             # compute Hessian approximation
             Hxx = jac_uu_l(Xk_lin, Uk_lin)
@@ -611,18 +603,18 @@ class Ocp:
             
             # add cost contribution
             f = f + ca.times(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
-                    np.vertcat(ca.vertcat(dXk, dUk, 1))))
+                    ca.vertcat(ca.vertcat(dXk, dUk, 1))))
 
             # add equality constraints
-            c_qp += [-dXk + np.dot(ca.transpose(nabla_f_x_prev), dXk_prev) \
-                + np.dot(ca.transpose(nabla_f_u_prev), dUk_prev) + r_lam_k]
+            c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_x_f_prev), dXk_prev) \
+                + ca.mtimes(ca.transpose(nabla_u_f_prev), dUk_prev) + r_lam_k]
 
             lbc_qp += [np.zeros((NG, 1))]
             ubc_qp += [np.zeros((NG, 1))]
 
             # add inequality constraints
-            c_qp += [np.dot(ca.transpose(nabla_g_x), dXk) \
-                + np.dot(ca.transpose(nabla_g_u), dUk) + r_nu_k]
+            c_qp += [ca.mtimes(ca.transpose(nabla_x_g), dXk) \
+                + ca.mtimes(ca.transpose(nabla_u_g), dUk) + r_nu_k]
 
             lbc_qp += [-np.inf*np.ones((NG, 1))]
             ubc_qp += [np.zeros((NG, 1))]
@@ -648,22 +640,22 @@ class Ocp:
             nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
             nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
 
-        r_lam_k = -Xk_lin + integrator(Xk_lin_prev, Uk_lin_prev)
+        r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
         # compute Hessian approximation
-        P = ca.reshape(p[M-2], NX, NX)
-        p = p[M-1]
+        import pdb; pdb.set_trace()
+        P = ca.reshape(p[-2], NX, NX)
+        p = p[-1]
 
-        HM = np.vstack([np.hstack([P, p]), \
-                np.hstack([p.T, 1])])
+        HM = ca.vertcat(ca.horzcat(P, p), ca.horzcat(p.T, 1))
         
         # add cost contribution
         f = f + ca.times(ca.vertcat(dXk, 1).T, ca.mtimes(HM, \
-                np.vertcat(ca.vertcat(dXk, 1))))
+                ca.vertcat(ca.vertcat(dXk, 1))))
 
         # add equality constraints
-        c_qp += [-dXk + np.dot(ca.transpose(nabla_f_x_prev), dXk_prev) \
-            + np.dot(ca.transpose(nabla_f_u_prev), dUk_prev) + r_lam_k]
+        c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_f_x_prev), dXk_prev) \
+            + ca.mtimes(ca.transpose(nabla_f_u_prev), dUk_prev) + r_lam_k]
 
         lbc_qp += [np.zeros((NG, 1))]
         ubc_qp += [np.zeros((NG, 1))]
@@ -671,8 +663,8 @@ class Ocp:
         if M == N:
             Tk_lin = T_lin[k]
             nabla_x_g = ca.transpose(jac_x_gN(Xk_lin)) 
-            r_nu_k = np.dot(ca.transpose(nabla_g_x, Xk_lin)) + Tk_lin
-            c_qp += [np.dot(ca.transpose(nabla_g_x), dXk) + r_nu_k]
+            r_nu_k = ca.mtimes(ca.transpose(nabla_g_x, Xk_lin)) + Tk_lin
+            c_qp += [ca.mtimes(ca.transpose(nabla_g_x), dXk) + r_nu_k]
 
             lbc_qp += [-np.inf*np.ones((NGN, 1))]
             ubc_qp += [np.zeros((NGN, 1))]
@@ -689,7 +681,6 @@ class Ocp:
 
         # create an NLP solver
         prob = {'f': f, 'x': dW, 'g': c_qp, 'p': p}
-        import pdb; pdb.set_trace()
         # opts = {'ipopt': {'print_level': 2}}
         opts = {}
         self.qp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);

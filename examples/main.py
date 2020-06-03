@@ -13,11 +13,10 @@ N = 20
 M = 0
 lbu = -1.0
 ubu = 1.0
-# tau = 0.001
 tau = 1.0
 niter = 50
 
-SOLVE_DENSE = False
+SOLVE_DENSE = True
 
 x0 = np.array([[1.0], [2.0]])
 
@@ -42,7 +41,8 @@ ocp.update_x0(x0)
 sol = ocp.eval()
 
 if SOLVE_DENSE:
-    sol_dense = ocp.solve_dense_nonlinear_system(10)
+    sol_dense = pt.auxiliary.solve_dense_nonlinear_system(ocp, \
+        newton_iters=20, alpha=0.5)
 
 # partially tightened RTI
 for i in range(niter):
@@ -55,18 +55,20 @@ x1 = sol['x'][0::NX+NU]
 x2 = sol['x'][1::NX+NU]
 plt.plot(np.linspace(0,T, N+1), x1)
 plt.plot(np.linspace(0,T, N+1), x2)
+
 if SOLVE_DENSE:
     x1 = sol_dense[NX::NX+NX+NU+NG+NG]
     x2 = sol_dense[NX+1::NX+NX+NU+NG+NG]
     plt.plot(np.linspace(0,T, N+1), x1, '--')
     plt.plot(np.linspace(0,T, N+1), x2, '--')
+
 pt_sol_x = np.vstack(ocp.x)
 pt_sol_u = np.vstack(ocp.u)
 pt_x1 = pt_sol_x[0::NX]
 pt_x2 = pt_sol_x[1::NX]
 plt.plot(np.linspace(0,T,N+1), pt_x1, 'o')
 plt.plot(np.linspace(0,T,N+1), pt_x2, 'o')
-legend=[r"x_1", r"x_2"]
+legend=[r"$x_1$", r"$x_2$"]
 plt.legend(legend)
 plt.grid()
 plt.ylabel(r"$x$")

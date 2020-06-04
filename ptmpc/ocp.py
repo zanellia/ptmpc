@@ -276,20 +276,39 @@ class Ocp:
         self.t = []
         self.nu = []
 
-        t_init = 1
-        nu_init = 1
+        t_init = 0.001
+        nu_init = 0.001
 
-        for i in range(N):
+        if M < N:
+            for i in range(M):
+                self.x.append(np.zeros((NX,1)))
+                self.u.append(np.zeros((NU,1)))
+                self.lam.append(np.zeros((NX,1)))
+                self.t.append(np.zeros((NG,1)))
+                self.nu.append(np.zeros((NG,1)))
+
+            for i in range(M, N):
+                self.x.append(np.zeros((NX,1)))
+                self.u.append(np.zeros((NU,1)))
+                self.lam.append(np.zeros((NX,1)))
+                self.t.append(t_init*np.ones((NG,1)))
+                self.nu.append(nu_init*np.ones((NG,1)))
+
             self.x.append(np.zeros((NX,1)))
-            self.u.append(np.zeros((NU,1)))
             self.lam.append(np.zeros((NX,1)))
-            self.t.append(t_init*np.ones((NG,1)))
-            self.nu.append(nu_init*np.ones((NG,1)))
-
-        self.x.append(np.zeros((NX,1)))
-        self.lam.append(np.zeros((NX,1)))
-        self.t.append(t_init*np.ones((NGN,1)))
-        self.nu.append(nu_init*np.ones((NGN,1)))
+            self.t.append(t_init*np.ones((NGN,1)))
+            self.nu.append(nu_init*np.ones((NGN,1)))
+        else:
+            for i in range(M):
+                self.x.append(np.zeros((NX,1)))
+                self.u.append(np.zeros((NU,1)))
+                self.lam.append(np.zeros((NX,1)))
+                self.t.append(np.zeros((NG,1)))
+                self.nu.append(np.zeros((NG,1)))
+            self.x.append(np.zeros((NX,1)))
+            self.lam.append(np.zeros((NX,1)))
+            self.t.append(np.zeros((NGN,1)))
+            self.nu.append(np.zeros((NGN,1)))
 
         # these are the variables associated with the linearized problem
         # - matrices
@@ -464,18 +483,35 @@ class Ocp:
             dW += [dLamk]
 
             Lamk_lin = ca.MX.sym('Lam_' + str(i) + '_lin', NX, 1)
-            Lam_lin+=[Lamk_lin]
+            Lam_lin+= [Lamk_lin]
 
             dW0 += [np.zeros((NX,1))]
 
             dXk = ca.MX.sym('dX_' + str(i), NX, 1)
-            dX +=[dXk]
+            dX += [dXk]
             dW += [dXk]
 
             Xk_lin = ca.MX.sym('X_' + str(i) + '_lin', NX, 1)
-            X_lin +=[Xk_lin]
+            X_lin += [Xk_lin]
 
             dW0 += [np.zeros((NX,1))]
+
+            if NGN > 0:
+                dNuk = ca.MX.sym('dNu_' + str(i), NGN, 1)
+                dNu +=[dNuk]
+                dW += [dNuk]
+
+                Nuk_lin = ca.MX.sym('dNu_' + str(i) + '_lin', NGN, 1)
+                Nu_lin +=[Nuk_lin]
+                dW0 += [np.ones((NG,1))]
+
+                dTk = ca.MX.sym('dT_' + str(i), NGN, 1)
+                dT +=[dTk]
+                dW += [dTk]
+
+                Tk_lin = ca.MX.sym('T_' + str(i) + '_lin', NGN, 1)
+                T_lin += [Tk_lin]
+                dW0 += [np.ones((NG,1))]
 
             # form parameter vector
             p +=[X_par]
@@ -499,7 +535,7 @@ class Ocp:
 
             # formulate the reduced QP
             k = 0
-            dXk = dXk[k]
+            dXk = dX[k]
 
             r_lam_0 = -X_lin[0] + X_par
             c_qp +=[-dXk + r_lam_0]
@@ -512,9 +548,7 @@ class Ocp:
             Lamk_lin = Lam_lin[k]
             Lamk_lin_next = Lam_lin[k+1]
             Xk_lin = X_lin[k]
-            Xk_lin_prev = X_lin[k-1]
             Uk_lin = U_lin[k]
-            Uk_lin_prev = U_lin[k-1]
             Nuk_lin = Nu_lin[k]
             Tk_lin = T_lin[k]
 
@@ -526,15 +560,13 @@ class Ocp:
             nabla_x_g = ca.transpose(jac_x_g(Xk_lin, Uk_lin)) 
             nabla_u_g = ca.transpose(jac_u_g(Xk_lin, Uk_lin)) 
 
-            r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
+            r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin_next) + \
+                - Lamk_lin + ca.mtimes(nabla_x_g, Nuk_lin)
 
-            r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin) + \
-                - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
-
-            r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin) + \
+            r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin_next) + \
                 ca.mtimes(nabla_u_g, Nuk_lin)
 
-            r_nu_k = ca.mtimes(nabla_x_g.T, Xk_lin) + ca.mtimes(nabla_u_g.T, Uk_lin) + Tk_lin
+            r_nu_k = g(Xk_lin, Uk_lin) + Tk_lin
 
             # compute Hessian approximation
             Huu = jac_uu_l(Xk_lin, Uk_lin)
@@ -585,13 +617,12 @@ class Ocp:
                 r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
                 r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin_next) \
-                    - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
+                    - Lamk_lin + ca.mtimes(nabla_x_g, Nuk_lin)
 
                 r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin_next) \
                     + ca.mtimes(nabla_u_g, Nuk_lin)
 
-                r_nu_k = ca.mtimes(ca.transpose(nabla_x_g), Xk_lin) + \
-                    ca.mtimes(ca.transpose(nabla_u_g), Uk_lin) + Tk_lin
+                r_nu_k = g(Xk_lin, Uk_lin) + Tk_lin
 
                 # compute Hessian approximation
                 Hxx = jac_uu_l(Xk_lin, Uk_lin)
@@ -621,6 +652,8 @@ class Ocp:
                 ubc_qp += [np.zeros((NG, 1))]
 
             k = M
+            Xk_lin_prev = X_lin[k-1]
+            Uk_lin_prev = U_lin[k-1]
             dXk = dX[k]
 
             if M < N:
@@ -632,14 +665,15 @@ class Ocp:
             Lamk_lin = Lam_lin[k]
             Xk_lin = X_lin[k]
 
+            nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
+            nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
+
             # compute residuals
             if M == N:
                 nabla_x_l = ca.transpose(jac_x_lN(Xk_lin)) 
             else:
                 nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
 
-                nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
-                nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
 
             r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
@@ -660,10 +694,11 @@ class Ocp:
             lbc_qp += [np.zeros((NG, 1))]
             ubc_qp += [np.zeros((NG, 1))]
 
-            if M == N:
+            if M == N and NGN > 0:
                 Tk_lin = T_lin[k]
                 nabla_x_g = ca.transpose(jac_x_gN(Xk_lin)) 
-                r_nu_k = ca.mtimes(ca.transpose(nabla_g_x, Xk_lin)) + Tk_lin
+
+                r_nu_k = gN(Xk_lin) + Tk_lin
                 c_qp += [ca.mtimes(ca.transpose(nabla_g_x), dXk) + r_nu_k]
 
                 lbc_qp += [-np.inf*np.ones((NGN, 1))]
@@ -877,9 +912,14 @@ class Ocp:
         """
 
         M = self.dims.M
-        r_lam_M = self.r_lam[M]
+        if M == 0:
+            r_lam_M = self.r_lam[M]
+        else:
+            r_lam_M = self.dx[M]
 
+        self.r_lam[M] = r_lam_M
         M = self.dims.M
+
         self.r_u_t[M] = self.r_u_t[M] + np.dot(self.Hxu[M], r_lam_M)
         self.r_lam[M+1] = self.r_lam[M+1] + np.dot(self.A[M], r_lam_M)
 
@@ -943,6 +983,7 @@ class Ocp:
         kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
 
         self.dx[M] = self.r_lam[M] 
+        # import pdb; pdb.set_trace()
         self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
         self.dlam[M] = np.dot(P_i, self.dx[M]) + p_i
 
@@ -974,6 +1015,7 @@ class Ocp:
             self.dlam[i] = np.dot(P_i, self.dx[i]) + p_i
 
 
+        # import pdb; pdb.set_trace()
         return
 
     def expand_solution(self):
@@ -1048,8 +1090,15 @@ class Ocp:
                     np.vstack(self.u[0:M]), np.vstack(self.nu[0:M+1]), np.vstack(self.t[0:M+1]), \
                 np.reshape(self.Hxx[M], (NX*NX, 1)), self.r_x[M]])
 
-        sol = self.qp_solver(p=p)
-        import pdb; pdb.set_trace()
+        sol = self.qp_solver(p=p, lbg=self._lbc_qp, ubg=self._ubc_qp)
+
+        for i in range(M):
+            for j in range(NX):
+                self.dx[i][j] = sol['x'][i*(NX+NX+NU+NG+NG)+NX+j]
+            for j in range(NU):
+                self.du[i][j] = sol['x'][i*(NX+NX+NU+NG+NG)+NX+NX+j]
+        for j in range(NX):
+            self.dx[M][j] = sol['x'][M*(NX+NX+NU+NG+NG)+NX+j]
 
     def primal_dual_step(self):
         """
@@ -1057,13 +1106,17 @@ class Ocp:
         """
 
         N = self.dims.N
+        M = self.dims.M
 
-        alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu), \
-            np.vstack(self.dnu))))
-        alpha_t = np.min(np.abs(np.divide(-np.vstack(self.t), \
-            np.vstack(self.dt))))
-        alpha = np.min([alpha_t, alpha_nu, 1.0])
-        alpha = 0.9995*alpha
+        if M < N:
+            alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu[M:]), \
+                    np.vstack(self.dnu[M:]))))
+            alpha_t = np.min(np.abs(np.divide(-np.vstack(self.t[M:]), \
+                    np.vstack(self.dt[M:]))))
+            alpha = np.min([alpha_t, alpha_nu, 1.0])
+            alpha = 0.9995*alpha
+        else:
+            alpha = 1.0
 
         if self.print_level > 0:
             # compute and print step size
@@ -1075,6 +1128,7 @@ class Ocp:
             print('alpha: {:.1e}, dlam: {:.1e}, dx: {:.1e}, du: {:.1e}'
             ' dnu: {:.1e}, dt: {:.1e}'.format(alpha, dlam, dx, du, dnu, dt))
 
+        # import pdb; pdb.set_trace()
         for i in range(N):
             self.x[i] = self.x[i] + alpha*self.dx[i]
             self.u[i] = self.u[i] + alpha*self.du[i]
@@ -1114,10 +1168,11 @@ class Ocp:
         self.backward_riccati()
         if M > 0:
             self.solve_reduced_qp()
-        self.update_vectors_stage_M()
-        self.forward_riccati()
-        if ng > 0 or ngN > 0:
-            self.expand_solution()
-        compute_qp_res(self)
+        if M < N:
+            self.update_vectors_stage_M()
+            self.forward_riccati()
+            if ng > 0 or ngN > 0:
+                self.expand_solution()
+            compute_qp_res(self)
         self.primal_dual_step()
         self.linearize()

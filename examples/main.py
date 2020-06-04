@@ -8,30 +8,31 @@ NU = 1
 NG = 2
 NGN = 0
 T = 10.0
-N = 20
+N = 10
 # M = 2
-M = 2
+M = N
 lbu = -1.0
 ubu = 1.0
-tau = 1.0
-niter = 50
+tau = 1.01
+niter = 100
 
 SOLVE_DENSE = False 
 
-x0 = np.array([[1.0], [2.0]])
+x0 = np.array([[4.0], [3.0]])
 
 x = ca.MX.sym('x', NX, 1)
 u = ca.MX.sym('u', NU, 1)
 
 Q = 10.0*np.eye(NX)
 R = 1.0*np.eye(NU)
-QN = 10.0*Q
+QN = 1.0*Q
 
 lc  = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(Q, x)) + 1.0/2.0*ca.mtimes(u.T, ca.mtimes(R, u))
 lcN = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(QN, x))
 g = ca.vertcat(u[0] - ubu, -u[0] + lbu)
 gN = [] 
-fc = ca.vertcat(-x[1], u[0] + x[0] -0.1*x[1])
+fc = ca.vertcat(-x[1] + 0.1*np.sin(x[1]), u[0] + x[0] -0.1*x[1])
+# fc = ca.vertcat(-x[1], u[0] + x[0] -0.1*x[1])
 
 dims = pt.ocp.OcpDims(NX, NU, NG, NGN, N, M)
 ocp = pt.ocp.Ocp(dims, x, u, lc, lcN, g, gN, fc, T, tau, print_level=2)

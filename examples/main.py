@@ -67,8 +67,8 @@ pt_sol_x = np.vstack(ocp.x)
 pt_sol_u = np.vstack(ocp.u)
 pt_x1 = pt_sol_x[0::NX]
 pt_x2 = pt_sol_x[1::NX]
-plt.plot(np.linspace(0,T,N+1), pt_x1, 'o')
-plt.plot(np.linspace(0,T,N+1), pt_x2, 'o')
+plt.plot(np.linspace(0,T,N+1), pt_x1, '-.')
+plt.plot(np.linspace(0,T,N+1), pt_x2, '-.')
 legend=[r"$x_1$", r"$x_2$"]
 plt.legend(legend)
 plt.grid()
@@ -79,7 +79,7 @@ plt.step(np.linspace(0,T, N), u1)
 if SOLVE_DENSE:
     u_dense = sol_dense[NX+NX::NX+NX+NU+NG+NG]
     plt.step(np.linspace(0,T, N), u_dense, '--')
-plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], 'o')
+plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], '-.')
 plt.grid()
 plt.xlabel(r"$t$")
 plt.ylabel(r"$u$")

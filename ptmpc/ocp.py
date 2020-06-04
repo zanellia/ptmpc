@@ -612,7 +612,7 @@ class Ocp:
                 nabla_x_g = ca.transpose(jac_x_g(Xk_lin, Uk_lin)) 
                 nabla_u_g = ca.transpose(jac_u_g(Xk_lin, Uk_lin)) 
                 nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
-                nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
+                nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin_prev, Uk_lin_prev)) 
 
                 r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
@@ -655,18 +655,18 @@ class Ocp:
             Xk_lin_prev = X_lin[k-1]
             Uk_lin_prev = U_lin[k-1]
             dXk = dX[k]
+            dXk_prev = dX[k-1]
+            dUk_prev = dU[k-1]
+            Lamk_lin = Lam_lin[k]
+            Xk_lin = X_lin[k]
 
             if M < N:
                 dUk = dU[k-1]
 
-            dXk_prev = dX[k-1]
-            dUk_prev = dU[k-1]
 
-            Lamk_lin = Lam_lin[k]
-            Xk_lin = X_lin[k]
 
             nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
-            nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
+            nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin_prev, Uk_lin_prev)) 
 
             # compute residuals
             if M == N:
@@ -1088,17 +1088,19 @@ class Ocp:
         else:
             p = np.vstack([self.x0, np.vstack(self.lam[0:M+1]), np.vstack(self.x[0:M+1]), \
                     np.vstack(self.u[0:M]), np.vstack(self.nu[0:M+1]), np.vstack(self.t[0:M+1]), \
-                np.reshape(self.Hxx[M], (NX*NX, 1)), self.r_x[M]])
+                np.reshape(self.PM, (NX*NX, 1)), self.pM])
 
         sol = self.qp_solver(p=p, lbg=self._lbc_qp, ubg=self._ubc_qp)
 
         for i in range(M):
             for j in range(NX):
                 self.dx[i][j] = sol['x'][i*(NX+NX+NU+NG+NG)+NX+j]
+                # self.dlam[i][j] = sol['lam_g'][i*(NX+NG)+j] - self.lam[i][j] 
             for j in range(NU):
                 self.du[i][j] = sol['x'][i*(NX+NX+NU+NG+NG)+NX+NX+j]
         for j in range(NX):
             self.dx[M][j] = sol['x'][M*(NX+NX+NU+NG+NG)+NX+j]
+            # self.dlam[M][j] = sol['lam_g'][M*(NX+NG)+j] - self.lam[M][j] 
 
     def primal_dual_step(self):
         """
@@ -1128,7 +1130,6 @@ class Ocp:
             print('alpha: {:.1e}, dlam: {:.1e}, dx: {:.1e}, du: {:.1e}'
             ' dnu: {:.1e}, dt: {:.1e}'.format(alpha, dlam, dx, du, dnu, dt))
 
-        # import pdb; pdb.set_trace()
         for i in range(N):
             self.x[i] = self.x[i] + alpha*self.dx[i]
             self.u[i] = self.u[i] + alpha*self.du[i]
@@ -1165,7 +1166,11 @@ class Ocp:
                 self.r_x_t[N] = self.r_x[N]
                 self.Hxx_t[N] = self.Hxx[N]
 
-        self.backward_riccati()
+        if M < N:
+            self.backward_riccati()
+        else:
+            self.PM = self.Hxx[N]
+            self.pM = self.r_x[N]
         if M > 0:
             self.solve_reduced_qp()
         if M < N:

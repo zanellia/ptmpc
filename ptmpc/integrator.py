@@ -23,6 +23,7 @@ class Integrator():
         self.u = u
         self.xdot = xdot
 
+        M = 10
         DT = Td/M
         f  = ca.Function('f', [x, u], [xdot])
         X  = x

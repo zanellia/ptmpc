@@ -10,13 +10,13 @@ NGN = 0
 T = 10.0
 N = 20
 # M = 2
-M = 1
+M = 2
 lbu = -1.0
 ubu = 1.0
 tau = 1.0
 niter = 50
 
-SOLVE_DENSE = True
+SOLVE_DENSE = False 
 
 x0 = np.array([[1.0], [2.0]])
 

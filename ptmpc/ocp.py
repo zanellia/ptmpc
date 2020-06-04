@@ -394,34 +394,77 @@ class Ocp:
 
         self.x0 = np.zeros((NX,1))
 
-        # construct reduced QP
-        dW=[]
-        dLam=[]
-        dX=[]
-        dU=[]
-        dNu=[]
-        dT=[]
-        dW0 =[]
-        p=[]
-        Lam_lin = []
-        X_lin = []
-        U_lin = []
-        Nu_lin = []
-        T_lin = []
+        if M > 0:
+            # construct reduced QP
+            dW=[]
+            dLam=[]
+            dX=[]
+            dU=[]
+            dNu=[]
+            dT=[]
+            dW0 =[]
+            p=[]
+            Lam_lin = []
+            X_lin = []
+            U_lin = []
+            Nu_lin = []
+            T_lin = []
 
-        # first parameter is initial state
-        X_par = ca.MX.sym('X_par', NX, 1)
-        p+=[X_par]
+            # first parameter is initial state
+            X_par = ca.MX.sym('X_par', NX, 1)
 
-        # define variables
-        for i in range(M):
+            # define variables
+            for i in range(M):
+                dLamk = ca.MX.sym('dLam_' + str(i), NX, 1)
+                dLam += [dLamk]
+                dW += [dLamk]
+
+                Lamk_lin = ca.MX.sym('Lam_' + str(i) + '_lin', NX, 1)
+                Lam_lin+=[Lamk_lin]
+
+                dW0 += [np.zeros((NX,1))]
+
+                dXk = ca.MX.sym('dX_' + str(i), NX, 1)
+                dX +=[dXk]
+                dW += [dXk]
+
+                Xk_lin = ca.MX.sym('X_' + str(i) + '_lin', NX, 1)
+                X_lin +=[Xk_lin]
+
+                dW0 += [np.zeros((NX,1))]
+
+                dUk = ca.MX.sym('dU_' + str(i), NU, 1)
+                dU +=[dUk]
+                dW += [dUk]
+
+                Uk_lin = ca.MX.sym('U_' + str(i) + '_lin', NU, 1)
+                U_lin +=[Uk_lin]
+
+                dW0 += [np.zeros((NU,1))]
+
+                dNuk = ca.MX.sym('dNu_' + str(i), NG, 1)
+                dNu +=[dNuk]
+                dW += [dNuk]
+
+                Nuk_lin = ca.MX.sym('dNu_' + str(i) + '_lin', NG, 1)
+                Nu_lin +=[Nuk_lin]
+                dW0 += [np.ones((NG,1))]
+
+                dTk = ca.MX.sym('dT_' + str(i), NG, 1)
+                dT +=[dTk]
+                dW += [dTk]
+
+                Tk_lin = ca.MX.sym('T_' + str(i) + '_lin', NG, 1)
+                T_lin += [Tk_lin]
+                dW0 += [np.ones((NG,1))]
+
+            i = M
             dLamk = ca.MX.sym('dLam_' + str(i), NX, 1)
             dLam += [dLamk]
             dW += [dLamk]
 
             Lamk_lin = ca.MX.sym('Lam_' + str(i) + '_lin', NX, 1)
             Lam_lin+=[Lamk_lin]
-            p += [Lamk_lin]
 
             dW0 += [np.zeros((NX,1))]
 
@@ -431,136 +474,40 @@ class Ocp:
 
             Xk_lin = ca.MX.sym('X_' + str(i) + '_lin', NX, 1)
             X_lin +=[Xk_lin]
-            p +=[Xk_lin]
 
             dW0 += [np.zeros((NX,1))]
 
-            dUk = ca.MX.sym('dU_' + str(i), NU, 1)
-            dU +=[dUk]
-            dW += [dUk]
+            # form parameter vector
+            p +=[X_par]
+            p += Lam_lin[:]
+            p += X_lin[:]
+            p += U_lin[:]
+            p += Nu_lin[:]
+            p += T_lin[:]
 
-            Uk_lin = ca.MX.sym('U_' + str(i) + '_lin', NU, 1)
-            U_lin +=[Uk_lin]
-            p +=[Uk_lin]
+            # last parameters correspond to p_M and P_M
+            P_M_flat = ca.MX.sym('P', NX*NX, 1)
+            p += [P_M_flat]
+            p_M = ca.MX.sym('p_M', NX, 1)
+            p += [p_M]
 
-            dW0 += [np.zeros((NU,1))]
+            # empty QP
+            c_qp=[]
+            lbc_qp = []
+            ubc_qp = []
+            f_qp = 0
 
-            dNuk = ca.MX.sym('dNu_' + str(i), NG, 1)
-            dNu +=[dNuk]
-            dW += [dNuk]
+            # formulate the reduced QP
+            k = 0
+            dXk = dXk[k]
 
-            Nuk_lin = ca.MX.sym('dNu_' + str(i) + '_lin', NG, 1)
-            Nu_lin +=[Nuk_lin]
-            p +=[Nuk_lin]
-            dW0 += [np.ones((NG,1))]
-
-            dTk = ca.MX.sym('dT_' + str(i), NG, 1)
-            dT +=[dTk]
-            dW += [dTk]
-
-            Tk_lin = ca.MX.sym('T_' + str(i) + '_lin', NG, 1)
-            T_lin += [Tk_lin]
-            p +=[Tk_lin]
-            dW0 += [np.ones((NG,1))]
-
-        i = M
-        dLamk = ca.MX.sym('dLam_' + str(i), NX, 1)
-        dLam += [dLamk]
-        dW += [dLamk]
-
-        Lamk_lin = ca.MX.sym('Lam_' + str(i) + '_lin', NX, 1)
-        Lam_lin+=[Lamk_lin]
-        p += [Lamk_lin]
-
-        dW0 += [np.zeros((NX,1))]
-
-        dXk = ca.MX.sym('dX_' + str(i), NX, 1)
-        dX +=[dXk]
-        dW += [dXk]
-
-        Xk_lin = ca.MX.sym('X_' + str(i) + '_lin', NX, 1)
-        X_lin +=[Xk_lin]
-        p +=[Xk_lin]
-
-        dW0 += [np.zeros((NX,1))]
-
-        # last parameters correspond to p_M and P_M
-        P_M_flat = ca.MX.sym('P', NX*NX, 1)
-        p += [P_M_flat]
-        p_M = ca.MX.sym('p_M', NX, 1)
-        p += [p_M]
-    
-        # empty QP
-        c_qp=[]
-        lbc_qp = []
-        ubc_qp = []
-        f_qp = 0
-
-        # formulate the QP
-        k = 0
-        dXk = dXk[k]
-
-        r_lam_0 = -X_lin[0] + X_par
-        c_qp +=[-dXk + r_lam_0]
-        lbc_qp+=[np.zeros((NX,1))]
-        ubc_qp+=[np.zeros((NX,1))]
-
-        dUk = dU[k]
-        dXk = dX[k]
-
-        Lamk_lin = Lam_lin[k]
-        Lamk_lin_next = Lam_lin[k+1]
-        Xk_lin = X_lin[k]
-        Xk_lin_prev = X_lin[k-1]
-        Uk_lin = U_lin[k]
-        Uk_lin_prev = U_lin[k-1]
-        Nuk_lin = Nu_lin[k]
-        Tk_lin = T_lin[k]
-
-        # compute residuals
-        nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
-        nabla_u_l = ca.transpose(jac_u_l(Xk_lin, Uk_lin)) 
-        nabla_x_f = ca.transpose(jac_x_f(Xk_lin, Uk_lin)) 
-        nabla_u_f = ca.transpose(jac_u_f(Xk_lin, Uk_lin)) 
-        nabla_x_g = ca.transpose(jac_x_g(Xk_lin, Uk_lin)) 
-        nabla_u_g = ca.transpose(jac_u_g(Xk_lin, Uk_lin)) 
-
-        r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
-
-        r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin) + \
-            - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
-
-        r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin) + \
-            ca.mtimes(nabla_u_g, Nuk_lin)
-
-        r_nu_k = ca.mtimes(nabla_x_g.T, Xk_lin) + ca.mtimes(nabla_u_g.T, Uk_lin) + Tk_lin
-
-        # compute Hessian approximation
-        Huu = jac_uu_l(Xk_lin, Uk_lin)
-        Hxx = jac_xx_l(Xk_lin, Uk_lin)
-        Hxu = jac_xu_l(Xk_lin, Uk_lin)
-
-        Hk = ca.vertcat(ca.horzcat(Hxx, Hxu, r_x_k), \
-                ca.horzcat(Hxu.T, Huu, r_u_k), \
-                ca.horzcat(ca.transpose(r_x_k), ca.transpose(r_u_k), 1))
-        
-        # add cost contribution
-        f = f + ca.mtimes(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
-                ca.vertcat(ca.vertcat(dXk, dUk, 1))))
-
-        # add inequality constraints
-        c_qp += [ca.mtimes(ca.transpose(nabla_x_g), dXk) \
-            + ca.mtimes(ca.transpose(nabla_u_g), dUk) + r_nu_k]
-
-        lbc_qp += [-np.inf*np.ones((NG, 1))]
-        ubc_qp += [np.zeros((NG, 1))]
-
-        for k in range(1,M):
+            r_lam_0 = -X_lin[0] + X_par
+            c_qp +=[-dXk + r_lam_0]
+            lbc_qp+=[np.zeros((NX,1))]
+            ubc_qp+=[np.zeros((NX,1))]
 
             dUk = dU[k]
-            dUk_prev = dU[k-1]
             dXk = dX[k]
-            dXk_prev = dX[k-1]
 
             Lamk_lin = Lam_lin[k]
             Lamk_lin_next = Lam_lin[k+1]
@@ -572,45 +519,35 @@ class Ocp:
             Tk_lin = T_lin[k]
 
             # compute residuals
-            nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Xk_lin)) 
+            nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
             nabla_u_l = ca.transpose(jac_u_l(Xk_lin, Uk_lin)) 
             nabla_x_f = ca.transpose(jac_x_f(Xk_lin, Uk_lin)) 
             nabla_u_f = ca.transpose(jac_u_f(Xk_lin, Uk_lin)) 
             nabla_x_g = ca.transpose(jac_x_g(Xk_lin, Uk_lin)) 
             nabla_u_g = ca.transpose(jac_u_g(Xk_lin, Uk_lin)) 
-            nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
-            nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
 
             r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
-            r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Xk_lin) + \
-                - Lamk_lim_next + ca.mtimes(nabla_x_g, Nuk_lin)
+            r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin) + \
+                - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
 
-            r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Uk_lin) + \
-                + ca.mtimes(nabla_u_g, Nuk_lin)
+            r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin) + \
+                ca.mtimes(nabla_u_g, Nuk_lin)
 
-            r_nu_k = ca.mtimes(ca.transpose(nabla_x_g, Xk_lin)) + \
-                ca.mtimes(ca.transpose(nabla_u_g, Uk_lin)) + Tk_lin
+            r_nu_k = ca.mtimes(nabla_x_g.T, Xk_lin) + ca.mtimes(nabla_u_g.T, Uk_lin) + Tk_lin
 
             # compute Hessian approximation
-            Hxx = jac_uu_l(Xk_lin, Uk_lin)
+            Huu = jac_uu_l(Xk_lin, Uk_lin)
             Hxx = jac_xx_l(Xk_lin, Uk_lin)
             Hxu = jac_xu_l(Xk_lin, Uk_lin)
 
-            Hk = np.vstack([np.hstack([Hxx, Hxu, r_x_k]), \
-                    np.hstack([Hux, Huu, r_u_k]), \
-                    np.hstack([ca.transpose(r_x_k), ca.transpose(r_u_k), 1])])
+            Hk = ca.vertcat(ca.horzcat(Hxx, Hxu, r_x_k), \
+                    ca.horzcat(Hxu.T, Huu, r_u_k), \
+                    ca.horzcat(ca.transpose(r_x_k), ca.transpose(r_u_k), 1))
             
             # add cost contribution
-            f = f + ca.times(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
+            f_qp = f_qp + ca.mtimes(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
                     ca.vertcat(ca.vertcat(dXk, dUk, 1))))
-
-            # add equality constraints
-            c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_x_f_prev), dXk_prev) \
-                + ca.mtimes(ca.transpose(nabla_u_f_prev), dUk_prev) + r_lam_k]
-
-            lbc_qp += [np.zeros((NG, 1))]
-            ubc_qp += [np.zeros((NG, 1))]
 
             # add inequality constraints
             c_qp += [ca.mtimes(ca.transpose(nabla_x_g), dXk) \
@@ -619,73 +556,134 @@ class Ocp:
             lbc_qp += [-np.inf*np.ones((NG, 1))]
             ubc_qp += [np.zeros((NG, 1))]
 
-        k = M
-        dXk = dX[k]
+            for k in range(1,M):
 
-        if M < N:
-            dUk = dU[k-1]
+                dUk = dU[k]
+                dUk_prev = dU[k-1]
+                dXk = dX[k]
+                dXk_prev = dX[k-1]
 
-        dXk_prev = dX[k-1]
-        dUk_prev = dU[k-1]
+                Lamk_lin = Lam_lin[k]
+                Lamk_lin_next = Lam_lin[k+1]
+                Xk_lin = X_lin[k]
+                Xk_lin_prev = X_lin[k-1]
+                Uk_lin = U_lin[k]
+                Uk_lin_prev = U_lin[k-1]
+                Nuk_lin = Nu_lin[k]
+                Tk_lin = T_lin[k]
 
-        Lamk_lin = Lam_lin[k]
-        Xk_lin = X_lin[k]
+                # compute residuals
+                nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
+                nabla_u_l = ca.transpose(jac_u_l(Xk_lin, Uk_lin)) 
+                nabla_x_f = ca.transpose(jac_x_f(Xk_lin, Uk_lin)) 
+                nabla_u_f = ca.transpose(jac_u_f(Xk_lin, Uk_lin)) 
+                nabla_x_g = ca.transpose(jac_x_g(Xk_lin, Uk_lin)) 
+                nabla_u_g = ca.transpose(jac_u_g(Xk_lin, Uk_lin)) 
+                nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
+                nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
 
-        # compute residuals
-        if M == N:
-            nabla_x_l = ca.transpose(jac_x_lN(Xk_lin)) 
-        else:
-            nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
+                r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
 
-            nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
-            nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
+                r_x_k = nabla_x_l + ca.mtimes(nabla_x_f, Lamk_lin_next) \
+                    - Lamk_lin_next + ca.mtimes(nabla_x_g, Nuk_lin)
 
-        r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
+                r_u_k = nabla_u_l + ca.mtimes(nabla_u_f, Lamk_lin_next) \
+                    + ca.mtimes(nabla_u_g, Nuk_lin)
 
-        # compute Hessian approximation
-        import pdb; pdb.set_trace()
-        P = ca.reshape(p[-2], NX, NX)
-        p = p[-1]
+                r_nu_k = ca.mtimes(ca.transpose(nabla_x_g), Xk_lin) + \
+                    ca.mtimes(ca.transpose(nabla_u_g), Uk_lin) + Tk_lin
 
-        HM = ca.vertcat(ca.horzcat(P, p), ca.horzcat(p.T, 1))
-        
-        # add cost contribution
-        f = f + ca.times(ca.vertcat(dXk, 1).T, ca.mtimes(HM, \
-                ca.vertcat(ca.vertcat(dXk, 1))))
+                # compute Hessian approximation
+                Hxx = jac_uu_l(Xk_lin, Uk_lin)
+                Hxx = jac_xx_l(Xk_lin, Uk_lin)
+                Hxu = jac_xu_l(Xk_lin, Uk_lin)
 
-        # add equality constraints
-        c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_f_x_prev), dXk_prev) \
-            + ca.mtimes(ca.transpose(nabla_f_u_prev), dUk_prev) + r_lam_k]
+                Hk = ca.vertcat(ca.horzcat(Hxx, Hxu, r_x_k), \
+                        ca.horzcat(Hxu.T, Huu, r_u_k), \
+                        ca.horzcat(ca.transpose(r_x_k), ca.transpose(r_u_k), 1))
+                
+                # add cost contribution
+                f_qp = f_qp + ca.mtimes(ca.vertcat(dXk, dUk, 1).T, ca.mtimes(Hk, \
+                        ca.vertcat(ca.vertcat(dXk, dUk, 1))))
 
-        lbc_qp += [np.zeros((NG, 1))]
-        ubc_qp += [np.zeros((NG, 1))]
+                # add equality constraints
+                c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_x_f_prev), dXk_prev) \
+                    + ca.mtimes(ca.transpose(nabla_u_f_prev), dUk_prev) + r_lam_k]
 
-        if M == N:
-            Tk_lin = T_lin[k]
-            nabla_x_g = ca.transpose(jac_x_gN(Xk_lin)) 
-            r_nu_k = ca.mtimes(ca.transpose(nabla_g_x, Xk_lin)) + Tk_lin
-            c_qp += [ca.mtimes(ca.transpose(nabla_g_x), dXk) + r_nu_k]
+                lbc_qp += [np.zeros((NG, 1))]
+                ubc_qp += [np.zeros((NG, 1))]
 
-            lbc_qp += [-np.inf*np.ones((NGN, 1))]
-            ubc_qp += [np.zeros((NGN, 1))]
+                # add inequality constraints
+                c_qp += [ca.mtimes(ca.transpose(nabla_x_g), dXk) \
+                    + ca.mtimes(ca.transpose(nabla_u_g), dUk) + r_nu_k]
 
-        c_qp = ca.vertcat(*c_qp)
-        dW = ca.vertcat(*dW)
-        p = ca.vertcat(*p)
-        
-        # convert lists to numpy arrays
-        self._lbc_qp = np.vstack(lbc_qp)
-        self._ubc_qp = np.vstack(ubc_qp)
+                lbc_qp += [-np.inf*np.ones((NG, 1))]
+                ubc_qp += [np.zeros((NG, 1))]
 
-        self._w0 = np.vstack(w0)
+            k = M
+            dXk = dX[k]
 
-        # create an NLP solver
-        prob = {'f': f, 'x': dW, 'g': c_qp, 'p': p}
-        # opts = {'ipopt': {'print_level': 2}}
-        opts = {}
-        self.qp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);
+            if M < N:
+                dUk = dU[k-1]
 
+            dXk_prev = dX[k-1]
+            dUk_prev = dU[k-1]
 
+            Lamk_lin = Lam_lin[k]
+            Xk_lin = X_lin[k]
+
+            # compute residuals
+            if M == N:
+                nabla_x_l = ca.transpose(jac_x_lN(Xk_lin)) 
+            else:
+                nabla_x_l = ca.transpose(jac_x_l(Xk_lin, Uk_lin)) 
+
+                nabla_x_f_prev = ca.transpose(jac_x_f(Xk_lin_prev, Uk_lin_prev)) 
+                nabla_u_f_prev = ca.transpose(jac_u_f(Xk_lin, Uk_lin_prev)) 
+
+            r_lam_k = -Xk_lin + integrator.eval(Xk_lin_prev, Uk_lin_prev)
+
+            # compute Hessian approximation
+            PM = ca.reshape(p[-2], NX, NX)
+            pM = p[-1]
+
+            HM = ca.vertcat(ca.horzcat(PM, pM), ca.horzcat(pM.T, 1))
+            
+            # add cost contribution
+            f_qp = f_qp + ca.mtimes(ca.vertcat(dXk, 1).T, ca.mtimes(HM, \
+                ca.vertcat(dXk, 1)))
+
+            # add equality constraints
+            c_qp += [-dXk + ca.mtimes(ca.transpose(nabla_x_f_prev), dXk_prev) \
+                + ca.mtimes(ca.transpose(nabla_u_f_prev), dUk_prev) + r_lam_k]
+
+            lbc_qp += [np.zeros((NG, 1))]
+            ubc_qp += [np.zeros((NG, 1))]
+
+            if M == N:
+                Tk_lin = T_lin[k]
+                nabla_x_g = ca.transpose(jac_x_gN(Xk_lin)) 
+                r_nu_k = ca.mtimes(ca.transpose(nabla_g_x, Xk_lin)) + Tk_lin
+                c_qp += [ca.mtimes(ca.transpose(nabla_g_x), dXk) + r_nu_k]
+
+                lbc_qp += [-np.inf*np.ones((NGN, 1))]
+                ubc_qp += [np.zeros((NGN, 1))]
+
+            c_qp = ca.vertcat(*c_qp)
+            dW = ca.vertcat(*dW)
+            p = ca.vertcat(*p)
+            
+            # convert lists to numpy arrays
+            self._lbc_qp = np.vstack(lbc_qp)
+            self._ubc_qp = np.vstack(ubc_qp)
+
+            self._w0 = np.vstack(w0)
+
+            # create an NLP solver
+            prob = {'f': f_qp, 'x': dW, 'g': c_qp, 'p': p}
+            # opts = {'ipopt': {'print_level': 2}}
+            opts = {}
+            self.qp_solver = ca.nlpsol('solver', 'ipopt', prob, opts);
 
     def update_x0(self, x0):
         """
@@ -834,7 +832,6 @@ class Ocp:
 
         return
 
-
     def eliminate_nu_lam(self):
         """
         Eliminate slack and inequality multipliers.
@@ -917,6 +914,9 @@ class Ocp:
             self.p[i] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
                 + np.dot(Sigma, self.r_u_t[i] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
 
+        self.PM = self.P[M]
+        self.pM = self.p[M]
+
         return
 
     def forward_riccati(self):
@@ -973,6 +973,7 @@ class Ocp:
             self.dx[i] = np.dot(A, self.dx[i-1]) + np.dot(B, self.du[i-1]) + self.r_lam[i]
             self.dlam[i] = np.dot(P_i, self.dx[i]) + p_i
 
+
         return
 
     def expand_solution(self):
@@ -1026,7 +1027,29 @@ class Ocp:
         """
         Solve reduced QP with horizon M.
         """
+        M = self.dims.M
+        N = self.dims.N
+        NX = self.dims.nx
+        NU = self.dims.nu
+        NG = self.dims.ng
+        NGN = self.dims.ngN
 
+        if M < N:
+            p = np.zeros(((M+1)*(NX + NX) + M*(NU + NG + NG) + NX + NX*NX + NX, 1))
+        else:
+            p = np.zeros(((M+1)*(NX + NX) + M*(NU + NG + NG) + NX + NX*NX + NX + NGN + NGN, 1))
+
+        if M < N:
+            p = np.vstack([self.x0, np.vstack(self.lam[0:M+1]), np.vstack(self.x[0:M+1]), \
+                    np.vstack(self.u[0:M]), np.vstack(self.nu[0:M]), np.vstack(self.t[0:M]), \
+                np.reshape(self.PM, (NX*NX, 1)), self.pM])
+        else:
+            p = np.vstack([self.x0, np.vstack(self.lam[0:M+1]), np.vstack(self.x[0:M+1]), \
+                    np.vstack(self.u[0:M]), np.vstack(self.nu[0:M+1]), np.vstack(self.t[0:M+1]), \
+                np.reshape(self.Hxx[M], (NX*NX, 1)), self.r_x[M]])
+
+        sol = self.qp_solver(p=p)
+        import pdb; pdb.set_trace()
 
     def primal_dual_step(self):
         """
@@ -1072,21 +1095,26 @@ class Ocp:
         ngN = self.dims.ngN
         ng = self.dims.ng
         N = self.dims.N
+        M = self.dims.M
 
         self.linearize()
-        if ng > 0 or ngN > 0:
-            self.eliminate_nu_lam()
-        else:
-            for i in range(N):
-                self.r_x_t[i] = self.r_x[i]
-                self.r_u_t[i] = self.r_u[i]
-                self.Hxx_t[i] = self.Hxx[i]
-                self.Huu_t[i] = self.Huu[i]
-                self.Hxu_t[i] = self.Hxu[i]
-            self.r_x_t[N] = self.r_x[N]
-            self.Hxx_t[N] = self.Hxx[N]
-        self.update_vectors_stage_M()
+        if M < N:
+            if ng > 0 or ngN > 0:
+                self.eliminate_nu_lam()
+            else:
+                for i in range(N):
+                    self.r_x_t[i] = self.r_x[i]
+                    self.r_u_t[i] = self.r_u[i]
+                    self.Hxx_t[i] = self.Hxx[i]
+                    self.Huu_t[i] = self.Huu[i]
+                    self.Hxu_t[i] = self.Hxu[i]
+                self.r_x_t[N] = self.r_x[N]
+                self.Hxx_t[N] = self.Hxx[N]
+
         self.backward_riccati()
+        if M > 0:
+            self.solve_reduced_qp()
+        self.update_vectors_stage_M()
         self.forward_riccati()
         if ng > 0 or ngN > 0:
             self.expand_solution()

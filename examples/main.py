@@ -6,12 +6,13 @@ import matplotlib.pyplot as plt
 NX = 2
 NU = 2
 T = 10.0
-N = 10
+N = 20
 M = 0
+M = 2
 # M = N
 lbu = -1.0
 ubu = 1.0
-tau = 0.01
+tau = 10.1
 niter = 50
 
 SOLVE_DENSE = False
@@ -56,7 +57,6 @@ NGN = ocp.dims.ngN
 plt.subplot(211)
 x1 = sol['x'][0::NX+NU]
 x2 = sol['x'][1::NX+NU]
-import pdb; pdb.set_trace()
 plt.plot(np.linspace(0,T, N+1), x1)
 plt.plot(np.linspace(0,T, N+1), x2)
 
@@ -86,10 +86,9 @@ plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], ':')
 plt.grid()
 plt.xlabel(r"$t$")
 plt.ylabel(r"$u$")
-# print('dense', sol_dense[0::NX+NX+NU+NG+NG])
-# print('dense2', sol_dense[1::NX+NX+NU+NG+NG])
-print('riccati', ocp.lam)
-print('ipopt', sol['lam_g'][0::NX+NG])
-print('ipopt2', sol['lam_g'][1::NX+NG])
-import pdb; pdb.set_trace()
+# # print('dense', sol_dense[0::NX+NX+NU+NG+NG])
+# # print('dense2', sol_dense[1::NX+NX+NU+NG+NG])
+# print('riccati', ocp.lam)
+# print('ipopt', sol['lam_g'][0::NX+NG])
+# print('ipopt2', sol['lam_g'][1::NX+NG])
 plt.show()

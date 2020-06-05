@@ -1035,32 +1035,32 @@ class Ocp:
             self.dx[1] = d0[NU+NX:NU+NX+NX]
             self.dx[0] = self.r_lam[0] 
         else:
-            dM = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[M-1], \
-                -self.r_lam[M-1], -self.p[M]]))
+            dM = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[M], \
+                -self.r_lam[M], -self.p[M+1]]))
 
-            self.du[M-1] = dM[0:NU]
-            self.dlam[M] = dM[NU:NU+NX]
-            self.dx[M] = dM[NU+NX:NU+NX+NX]
-            self.dx[M-1] = self.r_lam[M-1] 
+            self.du[M] = dM[0:NU]
+            self.dlam[M+1] = dM[NU:NU+NX]
+            self.dx[M+1] = dM[NU+NX:NU+NX+NX]
+            self.dx[M] = self.r_lam[M] 
 
             # since r_lam[M+1] is updated according to the QP solution
             # we need to update p[M] before starting the forward recursion
-            A = self.A[M-1]
-            B = self.B[M-1]
-            P = self.P[M]
-            Q = self.Hxx_t[M-1]
-            R = self.Huu_t[M-1]
-            S = self.Hxu_t[M-1]
+            A = self.A[M]
+            B = self.B[M]
+            P = self.P[M+1]
+            Q = self.Hxx_t[M]
+            R = self.Huu_t[M]
+            S = self.Hxu_t[M]
 
             Sigma = -np.dot(np_t(S) + np.dot(np.dot(np_t(A), P), B), \
                 np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B)))
 
             # vector recursion
             p = self.p[M]
-            r_x_t = self.r_x_t[M-1]
-            r_lam = self.r_lam[M]
-            self.p[M-1] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
-                + np.dot(Sigma, self.r_u_t[M-1] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
+            r_x_t = self.r_x_t[M]
+            r_lam = self.r_lam[M+1]
+            self.p[M] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
+                + np.dot(Sigma, self.r_u_t[M] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
 
             # A = self.A[M]
             # B = self.B[M]

@@ -33,14 +33,12 @@ class OcpDims:
         self.M = M
 
 class Ocp:
-    def __init__(self, dims, x, u, lc_, lcN_, g_, gN_, fc_, T, tau, print_level = 1):
+    def __init__(self, x, u, lc_, lcN_, g_, gN_, fc_, T, M, N, tau, print_level = 1, pt=True):
         """
         Define an optimal control formulation
 
         Parameters
         ----------
-        dims : OcpDims 
-            dimensions of the optimal control problem
         x    : CasADi MX
             CasADi symbolic variables representing the states
         u    : CasADi MX
@@ -61,7 +59,25 @@ class Ocp:
             tightening factor
         print_level : int
             print level
+        pt : bool
+            partial tightening vs standard SQP (default = True)
         """
+
+        self.pt = pt
+        NX = x.shape[0]
+        NU = u.shape[0]
+        if not isinstance(g_, list):
+            NG = g_.shape[0]
+        else:
+            NG = 0
+
+        if not isinstance(gN_, list):
+            NGN = gN_.shape[0]
+        else:
+            NGN = 0
+        
+        dims = OcpDims(NX, NU, NG, NGN, N, M)
+        self.dims = dims
 
         self.tau = tau
         self.print_level = print_level
@@ -179,7 +195,7 @@ class Ocp:
             lbc += [np.zeros((NX, 1))]
             ubc += [np.zeros((NX, 1))]
 
-        if M == N:
+        if M <= N:
             # compute barrier term
             barr_term = 0
             for i in range(NGN):
@@ -187,7 +203,6 @@ class Ocp:
 
             f = f + lcN(Xk) + barr_term
         else:
-
             f = f + lcN(Xk)
 
             # add constraints
@@ -282,7 +297,7 @@ class Ocp:
         t_init = 1.00
         nu_init = 1.00
 
-        if M < N:
+        if self.pt:
             for i in range(M):
                 self.x.append(np.zeros((NX,1)))
                 self.u.append(np.zeros((NU,1)))
@@ -291,23 +306,18 @@ class Ocp:
                 self.nu.append(np.zeros((NG,1)))
 
             for i in range(M, N):
-                # self.x.append(np.zeros((NX,1)))
-                # self.u.append(np.zeros((NU,1)))
-                self.x.append(10*np.ones((NX,1)))
-                self.u.append(i*10/3*np.ones((NU,1)))
-                self.lam.append(10/N*np.ones((NX,1)))
-                # self.lam.append(np.zeros((NX,1)))
+                self.x.append(np.zeros((NX,1)))
+                self.u.append(np.zeros((NU,1)))
+                self.lam.append(np.zeros((NX,1)))
                 self.t.append(t_init*np.ones((NG,1)))
                 self.nu.append(nu_init*np.ones((NG,1)))
 
-            # self.x.append(np.zeros((NX,1)))
-            # self.lam.append(np.zeros((NX,1)))
-            self.x.append(np.ones((NX,1)))
-            self.lam.append(np.ones((NX,1)))
+            self.x.append(np.zeros((NX,1)))
+            self.lam.append(np.zeros((NX,1)))
             self.t.append(t_init*np.ones((NGN,1)))
             self.nu.append(nu_init*np.ones((NGN,1)))
         else:
-            for i in range(M):
+            for i in range(N):
                 self.x.append(np.zeros((NX,1)))
                 self.u.append(np.zeros((NU,1)))
                 self.lam.append(np.zeros((NX,1)))
@@ -993,6 +1003,17 @@ class Ocp:
             self.PM = self.P[M]
             self.pM = self.p[M]
 
+            # end of recursion
+            # form matrix for stage 0
+            i = M
+            B = self.B[i]
+            Q = self.Hxx_t[i]
+            R = self.Huu_t[i]
+            self.R_tilde = np.vstack([\
+                np.hstack([R, np_t(B), np.zeros((NU, NX))]), \
+                np.hstack([B, np.zeros((NX, NX)), -np.eye(NX)]), \
+                np.hstack([np.zeros((NU,NX)), -np.eye(NX), self.P[M+1]])]) 
+
         return
 
     def forward_riccati(self):
@@ -1006,37 +1027,62 @@ class Ocp:
         NX = self.dims.nx
 
         if M == 0:
-            d0 = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[0], -self.r_lam[1], -self.p[1]]))
+            d0 = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[0], \
+                -self.r_lam[1], -self.p[1]]))
+
             self.du[0] = d0[0:NU]
             self.dlam[1] = d0[NU:NU+NX]
             self.dx[1] = d0[NU+NX:NU+NX+NX]
             self.dx[0] = self.r_lam[0] 
         else:
-            A = self.A[M]
-            B = self.B[M]
-            Q = self.Hxx_t[M]
-            R = self.Huu_t[M]
-            S = self.Hxu_t[M]
-            P = self.P[M+1]
-            p = self.p[M+1]
-            P_i = self.P[M]
-            p_i = self.p[M]
-            r_u_t = self.r_u_t[M]
-            r_lam = self.r_lam[M+1]
-            Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
-            Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
-            kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
+            dM = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[M-1], \
+                -self.r_lam[M-1], -self.p[M]]))
 
-            self.dx[M] = self.r_lam[M] 
-            self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
-            tmp = np.dot(A, self.dx[M]) + np.dot(B, self.du[M]) + self.r_lam[M+1]
-            self.dlam[M+1] = np.dot(P, tmp) + p
+            self.du[M-1] = dM[0:NU]
+            self.dlam[M] = dM[NU:NU+NX]
+            self.dx[M] = dM[NU+NX:NU+NX+NX]
+            self.dx[M-1] = self.r_lam[M-1] 
 
-            # # update multiplier at stage M
-            # self.dlam[M] = +self.r_x_t[M] + np.dot(Q, self.dx[M]) \
-            #     + np.dot(S, self.du[M]) +np.dot(np_t(A), self.dlam[M+1])
+            # since r_lam[M+1] is updated according to the QP solution
+            # we need to update p[M] before starting the forward recursion
+            A = self.A[M-1]
+            B = self.B[M-1]
+            P = self.P[M]
+            Q = self.Hxx_t[M-1]
+            R = self.Huu_t[M-1]
+            S = self.Hxu_t[M-1]
 
-        for i in range(M+1, N):
+            Sigma = -np.dot(np_t(S) + np.dot(np.dot(np_t(A), P), B), \
+                np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B)))
+
+            # vector recursion
+            p = self.p[M]
+            r_x_t = self.r_x_t[M-1]
+            r_lam = self.r_lam[M]
+            self.p[M-1] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
+                + np.dot(Sigma, self.r_u_t[M-1] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
+
+            # A = self.A[M]
+            # B = self.B[M]
+            # Q = self.Hxx_t[M]
+            # R = self.Huu_t[M]
+            # S = self.Hxu_t[M]
+            # P = self.P[M+1]
+            # p = self.p[M+1]
+            # P_i = self.P[M]
+            # p_i = self.p[M]
+            # r_u_t = self.r_u_t[M]
+            # r_lam = self.r_lam[M+1]
+            # Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
+            # Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
+            # kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
+
+            # self.dx[M] = self.r_lam[M] 
+            # self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
+            # tmp = np.dot(A, self.dx[M]) + np.dot(B, self.du[M]) + self.r_lam[M+1]
+            # self.dlam[M+1] = np.dot(P, tmp) + p
+
+        for i in range(np.max([1,M]), N):
             A = self.A[i]
             B = self.B[i]
             Q = self.Hxx_t[i]
@@ -1056,16 +1102,16 @@ class Ocp:
             self.dx[i+1] = np.dot(A, self.dx[i]) + np.dot(B, self.du[i]) + self.r_lam[i+1]
             self.dlam[i+1] = np.dot(P, self.dx[i+1]) + p
 
-        i = 0
-        A = self.A[i]
-        B = self.B[i]
-        Q = self.Hxx_t[i]
+        i = M
+        A = self.A[M]
+        B = self.B[M]
+        Q = self.Hxx_t[M]
         R = self.Huu_t[i]
         S = self.Hxu_t[i]
 
         # update multiplier at stage M
-        self.dlam[0] = +self.r_x_t[0] + np.dot(Q, self.dx[0]) \
-            + np.dot(S, self.du[0]) +np.dot(np_t(A), self.dlam[1])
+        self.dlam[M] = +self.r_x_t[M] + np.dot(Q, self.dx[M]) \
+            + np.dot(S, self.du[M]) +np.dot(np_t(A), self.dlam[M+1])
 
         # restore rhss
         self.r_u_t[M] = self.r_u_t_back
@@ -1131,19 +1177,12 @@ class Ocp:
         NG = self.dims.ng
         NGN = self.dims.ngN
 
-        if M < N:
-            p = np.zeros(((M+1)*(NX + NX) + M*(NU + NG + NG) + NX + NX*NX + NX, 1))
-        else:
-            p = np.zeros(((M+1)*(NX + NX) + M*(NU + NG + NG) + NX + NX*NX + NX + NGN + NGN, 1))
-
-        if M < N:
+        if self.pt:
             p = np.vstack([self.x0, np.vstack(self.lam[0:M+1]), np.vstack(self.x[0:M+1]), \
                     np.vstack(self.u[0:M]), np.vstack(self.nu[0:M]), np.vstack(self.t[0:M]), \
                 np.reshape(self.PM, (NX*NX, 1)), self.pM])
         else:
-            p = np.vstack([self.x0, np.vstack(self.lam[0:M+1]), np.vstack(self.x[0:M+1]), \
-                    np.vstack(self.u[0:M]), np.vstack(self.nu[0:M+1]), np.vstack(self.t[0:M+1]), \
-                np.reshape(self.PM, (NX*NX, 1)), self.pM])
+            p = np.zeros(((M+1)*(NX + NX) + M*(NU + NG + NG) + NX + NX*NX + NX + NGN + NGN, 1))
 
         sol = self.qp_solver(p=p, lbg=self._lbc_qp, ubg=self._ubc_qp)
 
@@ -1165,7 +1204,7 @@ class Ocp:
         N = self.dims.N
         M = self.dims.M
 
-        if M < N:
+        if self.pt:
             if self.dims.ng > 0:
                 alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu[M:]), \
                         np.vstack(self.dnu[M:]))))

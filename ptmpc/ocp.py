@@ -104,8 +104,11 @@ class Ocp:
         ubc = []
         Xk = ca.MX.sym('X0', NX, 1)
         w += [Xk]
-        lbw += [np.zeros((NX,1))]
-        ubw += [np.zeros((NX,1))]
+        c+=[Xk]
+        lbc += [np.zeros((NX,1))]
+        ubc += [np.zeros((NX,1))]
+        lbw += [-np.inf*np.ones((NX,1))]
+        ubw += [+np.inf*np.ones((NX,1))]
         w0 += [np.zeros((NX,1))]
         f = 0
     
@@ -276,8 +279,8 @@ class Ocp:
         self.t = []
         self.nu = []
 
-        t_init = 0.001
-        nu_init = 0.001
+        t_init = 1.00
+        nu_init = 1.00
 
         if M < N:
             for i in range(M):
@@ -288,14 +291,19 @@ class Ocp:
                 self.nu.append(np.zeros((NG,1)))
 
             for i in range(M, N):
-                self.x.append(np.zeros((NX,1)))
-                self.u.append(np.zeros((NU,1)))
-                self.lam.append(np.zeros((NX,1)))
+                # self.x.append(np.zeros((NX,1)))
+                # self.u.append(np.zeros((NU,1)))
+                self.x.append(10*np.ones((NX,1)))
+                self.u.append(i*10/3*np.ones((NU,1)))
+                self.lam.append(10/N*np.ones((NX,1)))
+                # self.lam.append(np.zeros((NX,1)))
                 self.t.append(t_init*np.ones((NG,1)))
                 self.nu.append(nu_init*np.ones((NG,1)))
 
-            self.x.append(np.zeros((NX,1)))
-            self.lam.append(np.zeros((NX,1)))
+            # self.x.append(np.zeros((NX,1)))
+            # self.lam.append(np.zeros((NX,1)))
+            self.x.append(np.ones((NX,1)))
+            self.lam.append(np.ones((NX,1)))
             self.t.append(t_init*np.ones((NGN,1)))
             self.nu.append(nu_init*np.ones((NGN,1)))
         else:
@@ -388,6 +396,9 @@ class Ocp:
         # these are the variables associated with the Riccati recursion 
         self.P = []
         self.p = []
+
+        self.r_u_t_back = []
+        self.r_lam_back = []
 
         for i in range(N+1):
             self.p.append(np.zeros((NX,1)))
@@ -730,8 +741,8 @@ class Ocp:
             new value of x0
         """
         for i in range(self.dims.nx):
-            self._lbw[i] = x0[i]
-            self._ubw[i] = x0[i]
+            self._lbc[i] = x0[i]
+            self._ubc[i] = x0[i]
         self.x0 = x0
 
     def eval(self):
@@ -889,6 +900,11 @@ class Ocp:
                 np.dot(np.dot(np_t(D), VT_inv), self.r_nu[i]) - \
                 np.dot(np_t(D), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), self.t[i])), self.e[i]))
 
+            self.r_x_t[i] = self.r_x[i] + \
+                np.dot(np.dot(np_t(C), VT_inv), self.r_nu[i]) - \
+                np.dot(np_t(C), np.dot(np.diagflat(np.divide(np.ones((self.dims.ng, 1)), self.t[i])), self.e[i]))
+
+
         VT_inv = np.diagflat(np.divide(self.nu[N], self.t[N]))
         C = self.C[N]
         self.Hxx_t[N] = self.Hxx[N] + np.dot(np.dot(np_t(C), VT_inv), C)
@@ -920,19 +936,27 @@ class Ocp:
         self.r_lam[M] = r_lam_M
         M = self.dims.M
 
+        # back up rhss
+        self.r_u_t_back = self.r_u_t[M]
         self.r_u_t[M] = self.r_u_t[M] + np.dot(self.Hxu[M], r_lam_M)
+        self.r_lam_back = self.r_lam[M+1]
         self.r_lam[M+1] = self.r_lam[M+1] + np.dot(self.A[M], r_lam_M)
 
     def backward_riccati(self):
         """
         Perform backward Riccati recursion for stages N to M.
         """
-
         N = self.dims.N
         M = self.dims.M
+        NU = self.dims.nu
+        NX = self.dims.nx
+
         self.P[N] = self.Hxx_t[N]
         self.p[N] = self.r_x_t[N]
-        for i in range(N-1,M-1,-1):
+
+        M_ = np.max([M-1, 0])
+        for i in range(N-1, M_,-1):
+            print(i)
             # matrix recursion
             A = self.A[i]
             B = self.B[i]
@@ -954,8 +978,20 @@ class Ocp:
             self.p[i] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
                 + np.dot(Sigma, self.r_u_t[i] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
 
-        self.PM = self.P[M]
-        self.pM = self.p[M]
+        if M == 0:
+            # end of recursion
+            # form matrix for stage 0
+            i = 0
+            B = self.B[i]
+            Q = self.Hxx_t[i]
+            R = self.Huu_t[i]
+            self.R_tilde = np.vstack([\
+                np.hstack([R, np_t(B), np.zeros((NU, NX))]), \
+                np.hstack([B, np.zeros((NX, NX)), -np.eye(NX)]), \
+                np.hstack([np.zeros((NU,NX)), -np.eye(NX), self.P[M+1]])]) 
+        else:
+            self.PM = self.P[M]
+            self.pM = self.p[M]
 
         return
 
@@ -966,28 +1002,39 @@ class Ocp:
 
         N = self.dims.N
         M = self.dims.M
+        NU = self.dims.nu
+        NX = self.dims.nx
 
-        A = self.A[M]
-        B = self.B[M]
-        Q = self.Hxx_t[M]
-        R = self.Huu_t[M]
-        S = self.Hxu_t[M]
-        P = self.P[M+1]
-        p = self.p[M+1]
-        P_i = self.P[M]
-        p_i = self.p[M]
-        r_u_t = self.r_u_t[M]
-        r_lam = self.r_lam[M+1]
-        Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
-        Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
-        kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
+        if M == 0:
+            d0 = np.linalg.solve(self.R_tilde, np.vstack([-self.r_u_t[0], -self.r_lam[1], -self.p[1]]))
+            self.du[0] = d0[0:NU]
+            self.dlam[1] = d0[NU:NU+NX]
+            self.dx[1] = d0[NU+NX:NU+NX+NX]
+            self.dx[0] = self.r_lam[0] 
+        else:
+            A = self.A[M]
+            B = self.B[M]
+            Q = self.Hxx_t[M]
+            R = self.Huu_t[M]
+            S = self.Hxu_t[M]
+            P = self.P[M+1]
+            p = self.p[M+1]
+            P_i = self.P[M]
+            p_i = self.p[M]
+            r_u_t = self.r_u_t[M]
+            r_lam = self.r_lam[M+1]
+            Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
+            Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
+            kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
 
-        self.dx[M] = self.r_lam[M] 
-        # import pdb; pdb.set_trace()
-        self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
-        self.dlam[M] = np.dot(P_i, self.dx[M]) + p_i
+            self.dx[M] = self.r_lam[M] 
+            self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
+            tmp = np.dot(A, self.dx[M]) + np.dot(B, self.du[M]) + self.r_lam[M+1]
+            self.dlam[M+1] = np.dot(P, tmp) + p
 
-        self.dx[M+1] = np.dot(A, self.dx[M]) + np.dot(B, self.du[M]) + self.r_lam[M+1] 
+            # # update multiplier at stage M
+            # self.dlam[M] = +self.r_x_t[M] + np.dot(Q, self.dx[M]) \
+            #     + np.dot(S, self.du[M]) +np.dot(np_t(A), self.dlam[M+1])
 
         for i in range(M+1, N):
             A = self.A[i]
@@ -1000,22 +1047,30 @@ class Ocp:
             P_i = self.P[i]
             p_i = self.p[i]
             Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
-            Kappa = -np.dot(Gamma, S + np.dot( np_t(B), np.dot(P, A)))
+            Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
             kappa = -np.dot(Gamma, self.r_u_t[i] + np.dot(np_t(B), np.dot(P, self.r_lam[i+1]) + p)) 
 
-            self.dx[i] = np.dot(A, self.dx[i-1]) + np.dot(B, self.du[i-1]) + self.r_lam[i]
+            A_prev = self.A[i-1]
+            B_prev = self.B[i-1]
             self.du[i] = np.dot(Kappa, self.dx[i]) + kappa
-            self.dlam[i] = np.dot(P_i, self.dx[i]) + p_i
+            self.dx[i+1] = np.dot(A, self.dx[i]) + np.dot(B, self.du[i]) + self.r_lam[i+1]
+            self.dlam[i+1] = np.dot(P, self.dx[i+1]) + p
 
-        if M < N:
-            i = N
-            P_i = self.P[i]
-            p_i = self.p[i]
-            self.dx[i] = np.dot(A, self.dx[i-1]) + np.dot(B, self.du[i-1]) + self.r_lam[i]
-            self.dlam[i] = np.dot(P_i, self.dx[i]) + p_i
+        i = 0
+        A = self.A[i]
+        B = self.B[i]
+        Q = self.Hxx_t[i]
+        R = self.Huu_t[i]
+        S = self.Hxu_t[i]
 
+        # update multiplier at stage M
+        self.dlam[0] = +self.r_x_t[0] + np.dot(Q, self.dx[0]) \
+            + np.dot(S, self.du[0]) +np.dot(np_t(A), self.dlam[1])
 
-        # import pdb; pdb.set_trace()
+        # restore rhss
+        self.r_u_t[M] = self.r_u_t_back
+        self.r_lam[M+1] = self.r_lam_back
+
         return
 
     def expand_solution(self):
@@ -1111,12 +1166,15 @@ class Ocp:
         M = self.dims.M
 
         if M < N:
-            alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu[M:]), \
-                    np.vstack(self.dnu[M:]))))
-            alpha_t = np.min(np.abs(np.divide(-np.vstack(self.t[M:]), \
-                    np.vstack(self.dt[M:]))))
-            alpha = np.min([alpha_t, alpha_nu, 1.0])
-            alpha = 0.9995*alpha
+            if self.dims.ng > 0:
+                alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu[M:]), \
+                        np.vstack(self.dnu[M:]))))
+                alpha_t = np.min(np.abs(np.divide(-np.vstack(self.t[M:]), \
+                        np.vstack(self.dt[M:]))))
+                alpha = np.min([alpha_t, alpha_nu, 1.0])
+                alpha = 0.9995*alpha
+            else:
+                alpha = 1.0
         else:
             alpha = 1.0
 

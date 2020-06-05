@@ -4,17 +4,17 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 NX = 2
-NU = 1
-NG = 2
+NU = 2
+NG = 0
 NGN = 0
 T = 10.0
 N = 10
-# M = 2
-M = N
-lbu = -1.0
-ubu = 1.0
-tau = 1.01
-niter = 100
+M = 0
+# M = N
+lbu = -1000.0
+ubu = 1000.0
+tau = 1.0
+niter = 4
 
 SOLVE_DENSE = False 
 
@@ -24,15 +24,17 @@ x = ca.MX.sym('x', NX, 1)
 u = ca.MX.sym('u', NU, 1)
 
 Q = 10.0*np.eye(NX)
-R = 1.0*np.eye(NU)
+R = 10.0*np.eye(NU)
 QN = 1.0*Q
 
+# lc  = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(Q, x)) + 1.0/2.0*ca.mtimes(u.T, ca.mtimes(R, u) +  np.sin(x[0])**2)
 lc  = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(Q, x)) + 1.0/2.0*ca.mtimes(u.T, ca.mtimes(R, u))
 lcN = 1.0/2.0*ca.mtimes(x.T, ca.mtimes(QN, x))
 g = ca.vertcat(u[0] - ubu, -u[0] + lbu)
+g = []
 gN = [] 
 fc = ca.vertcat(-x[1] + 0.1*np.sin(x[1]), u[0] + x[0] -0.1*x[1])
-# fc = ca.vertcat(-x[1], u[0] + x[0] -0.1*x[1])
+# fc = ca.vertcat(-x[1] + x[0], u[0] + x[0] -0.1*x[1] + u[1])
 
 dims = pt.ocp.OcpDims(NX, NU, NG, NGN, N, M)
 ocp = pt.ocp.Ocp(dims, x, u, lc, lcN, g, gN, fc, T, tau, print_level=2)
@@ -43,7 +45,7 @@ sol = ocp.eval()
 
 if SOLVE_DENSE:
     sol_dense = pt.auxiliary.solve_dense_nonlinear_system(ocp, \
-        newton_iters=20, alpha=0.5)
+        newton_iters=50, alpha=0.1)
 
 # partially tightened RTI
 for i in range(niter):
@@ -67,8 +69,8 @@ pt_sol_x = np.vstack(ocp.x)
 pt_sol_u = np.vstack(ocp.u)
 pt_x1 = pt_sol_x[0::NX]
 pt_x2 = pt_sol_x[1::NX]
-plt.plot(np.linspace(0,T,N+1), pt_x1, '-.')
-plt.plot(np.linspace(0,T,N+1), pt_x2, '-.')
+plt.plot(np.linspace(0,T,N+1), pt_x1, '.')
+plt.plot(np.linspace(0,T,N+1), pt_x2, '.')
 legend=[r"$x_1$", r"$x_2$"]
 plt.legend(legend)
 plt.grid()
@@ -79,8 +81,14 @@ plt.step(np.linspace(0,T, N), u1)
 if SOLVE_DENSE:
     u_dense = sol_dense[NX+NX::NX+NX+NU+NG+NG]
     plt.step(np.linspace(0,T, N), u_dense, '--')
-plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], '-.')
+plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], '.')
 plt.grid()
 plt.xlabel(r"$t$")
 plt.ylabel(r"$u$")
+# print('dense', sol_dense[0::NX+NX+NU+NG+NG])
+# print('dense2', sol_dense[1::NX+NX+NU+NG+NG])
+print('riccati', ocp.lam)
+print('ipopt', sol['lam_g'][0::NX+NG])
+print('ipopt2', sol['lam_g'][1::NX+NG])
+import pdb; pdb.set_trace()
 plt.show()

@@ -41,7 +41,6 @@ def compute_qp_res(ocp):
             np.dot(np_t(A), dlam_next) - dlam + \
             np.dot(np_t(C), dnu) + ocp.r_x[i]
 
-
         ocp.r_u_qp[i] = np.dot(R,du) + np.dot(np_t(B), dlam_next) + \
             np.dot(np_t(D), dnu) + ocp.r_u[i]
 

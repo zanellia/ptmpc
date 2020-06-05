@@ -3,21 +3,27 @@ import casadi as ca
 import numpy as np
 import matplotlib.pyplot as plt
 
+plt.rcParams['text.usetex'] = True
+plt.rcParams['text.latex.preamble'] = [r'\usepackage{lmodern}']
+# mpl.use('pgf')
+font = {'family':'serif'}
+plt.rc('font',**font)
+
 NX = 2
 NU = 2
 T = 10.0
-N = 20
+N = 30
 M = 0
 M = 2
 # M = N
 lbu = -1.0
 ubu = 1.0
 tau = 10.1
-niter = 50
+niter = 20
 
 SOLVE_DENSE = False
 
-x0 = np.array([[4.0], [3.0]])
+x0 = np.array([[5.0], [3.0]])
 
 x = ca.MX.sym('x', NX, 1)
 u = ca.MX.sym('u', NU, 1)
@@ -32,7 +38,7 @@ g = ca.vertcat(u[0] - ubu, -u[0] + lbu)
 # g = []
 gN = [] 
 
-fc = ca.vertcat(-x[1] + 0.1*np.sin(x[1]), u[0] + x[0] -0.1*x[1])
+fc = ca.vertcat(-x[1] + 0.3*np.sin(x[1]), u[0] + x[0] -0.1*x[1])
 # fc = ca.vertcat(-x[1] + x[1], u[0] + x[0] -0.1*x[1])
 
 ocp = pt.ocp.Ocp(x, u, lc, lcN, g, gN, fc, T, M, N, tau, print_level=2)
@@ -46,9 +52,15 @@ if SOLVE_DENSE:
         newton_iters=50, alpha=0.1)
 
 # partially tightened RTI
+step_size = np.zeros((niter,1))
+alpha = np.zeros((niter,1))
 for i in range(niter):
 
     ocp.pt_rti()
+    step = np.vstack([np.vstack(ocp.dlam), np.vstack(ocp.dx), np.vstack(ocp.du), 
+        np.vstack(ocp.dnu), np.vstack(ocp.dt)])
+    step_size[i] = np.linalg.norm(step) 
+    alpha[i] = ocp.alpha
 
 plt.figure()
 NG = ocp.dims.ng
@@ -86,9 +98,16 @@ plt.step(np.linspace(0,T, N), pt_sol_u[0::NU], ':')
 plt.grid()
 plt.xlabel(r"$t$")
 plt.ylabel(r"$u$")
-# # print('dense', sol_dense[0::NX+NX+NU+NG+NG])
-# # print('dense2', sol_dense[1::NX+NX+NU+NG+NG])
-# print('riccati', ocp.lam)
-# print('ipopt', sol['lam_g'][0::NX+NG])
-# print('ipopt2', sol['lam_g'][1::NX+NG])
+
+plt.figure()
+plt.subplot(2,1,1)
+plt.semilogy(step_size)
+plt.grid()
+plt.xlabel(r"iterates")
+plt.ylabel(r"step size")
+plt.subplot(2,1,2)
+plt.semilogy(alpha)
+plt.grid()
+plt.xlabel(r"iterates")
+plt.ylabel(r"$\alpha$")
 plt.show()

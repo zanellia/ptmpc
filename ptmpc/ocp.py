@@ -1012,7 +1012,7 @@ class Ocp:
             self.R_tilde = np.vstack([\
                 np.hstack([R, np_t(B), np.zeros((NU, NX))]), \
                 np.hstack([B, np.zeros((NX, NX)), -np.eye(NX)]), \
-                np.hstack([np.zeros((NU,NX)), -np.eye(NX), self.P[M+1]])]) 
+                np.hstack([np.zeros((NX,NU)), -np.eye(NX), self.P[M+1]])]) 
 
         return
 
@@ -1062,26 +1062,6 @@ class Ocp:
             self.p[M] = r_x_t + np.dot(np.transpose(A), np.dot(P, r_lam) + p) \
                 + np.dot(Sigma, self.r_u_t[M] + np.dot(np.transpose(B), np.dot(P, r_lam) + p))
 
-            # A = self.A[M]
-            # B = self.B[M]
-            # Q = self.Hxx_t[M]
-            # R = self.Huu_t[M]
-            # S = self.Hxu_t[M]
-            # P = self.P[M+1]
-            # p = self.p[M+1]
-            # P_i = self.P[M]
-            # p_i = self.p[M]
-            # r_u_t = self.r_u_t[M]
-            # r_lam = self.r_lam[M+1]
-            # Gamma = np.linalg.inv(R + np.dot(np.dot(np_t(B), P), B))
-            # Kappa = -np.dot(Gamma, S + np.dot(np_t(B), np.dot(P, A)))
-            # kappa = -np.dot(Gamma, r_u_t + np.dot(np_t(B), np.dot(P, r_lam) + p)) 
-
-            # self.dx[M] = self.r_lam[M] 
-            # self.du[M] = np.dot(Kappa, self.dx[M]) + kappa
-            # tmp = np.dot(A, self.dx[M]) + np.dot(B, self.du[M]) + self.r_lam[M+1]
-            # self.dlam[M+1] = np.dot(P, tmp) + p
-
         for i in range(np.max([1,M]), N):
             A = self.A[i]
             B = self.B[i]
@@ -1111,7 +1091,7 @@ class Ocp:
 
         # update multiplier at stage M
         self.dlam[M] = +self.r_x_t[M] + np.dot(Q, self.dx[M]) \
-            + np.dot(S, self.du[M]) +np.dot(np_t(A), self.dlam[M+1])
+            + np.dot(np_t(S), self.du[M]) +np.dot(np_t(A), self.dlam[M+1])
 
         # restore rhss
         self.r_u_t[M] = self.r_u_t_back
@@ -1216,6 +1196,8 @@ class Ocp:
                 alpha = 1.0
         else:
             alpha = 1.0
+
+        self.alpha = alpha
 
         if self.print_level > 0:
             # compute and print step size

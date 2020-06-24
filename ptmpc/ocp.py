@@ -966,7 +966,6 @@ class Ocp:
 
         M_ = np.max([M-1, 0])
         for i in range(N-1, M_,-1):
-            print(i)
             # matrix recursion
             A = self.A[i]
             B = self.B[i]
@@ -1185,11 +1184,13 @@ class Ocp:
         M = self.dims.M
 
         if self.pt:
-            if self.dims.ng > 0:
+            if (M < N and self.dims.ng > 0) or (M == N and self.dims.ngN > 0):
                 alpha_nu = np.min(np.abs(np.divide(-np.vstack(self.nu[M:]), \
-                        np.vstack(self.dnu[M:]))))
+                    np.vstack(self.dnu[M:]))))
+
                 alpha_t = np.min(np.abs(np.divide(-np.vstack(self.t[M:]), \
-                        np.vstack(self.dt[M:]))))
+                    np.vstack(self.dt[M:]))))
+
                 alpha = np.min([alpha_t, alpha_nu, 1.0])
                 alpha = 0.9995*alpha
             else:
